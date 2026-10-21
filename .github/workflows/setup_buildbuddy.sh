@@ -22,6 +22,7 @@ build:rc --remote_cache=grpcs://${ENDPOINT}
 build:rc --remote_timeout=10m
 build:rc --remote_header=x-buildbuddy-api-key=${API_KEY}
 build:rc --remote_cache_compression
+build:rc --experimental_remote_cache_chunking
 build:rc --noslim_profile --experimental_profile_include_target_label --experimental_profile_include_primary_output
 
 build:rbe --config=rc
