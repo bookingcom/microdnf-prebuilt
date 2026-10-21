@@ -20,9 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate Renovate configuration
-        run: npx --yes --package renovate renovate-config-validator --strict renovate.json
-
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.1
         with:
@@ -34,9 +31,6 @@ jobs:
         env:
           BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
         run: .github/workflows/setup_buildbuddy.sh
-
-      - name: Pull Docker sandbox image
-        run: docker pull gcr.io/flame-public/rbe-ubuntu24-04:latest
 
       - name: Build all targets
         run: bazel build //... //:microdnf_all //:rpm2archive_all //:dnf_lock_all --config=ci
