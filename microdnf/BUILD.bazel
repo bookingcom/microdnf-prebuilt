@@ -1,7 +1,12 @@
-load("//bazel:platforms.bzl", "SUPPORTED_PLATFORMS")
-load("//microdnf:toolchain.bzl", "microdnf_toolchain")
+load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
+load("//microdnf/private:toolchain.bzl", "microdnf_toolchain")
 
 package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "extension.bzl",
+    "extensions.bzl",
+])
 
 toolchain_type(
     name = "toolchain_type",

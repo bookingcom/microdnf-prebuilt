@@ -327,7 +327,7 @@
     },
     "//microdnf:extensions.bzl%microdnf_prebuilt_extension": {
       "general": {
-        "bzlTransitiveDigest": "XBa4jt2XvCrwX2BXTTuCbqJD/kDoX5i1AV7GH8Hc7i4=",
+        "bzlTransitiveDigest": "M2r7fGBq31OgA5TeKE9dWqm3LplMzWJQqlFk3gEaMZg=",
         "usagesDigest": "nYgae9k7YGOJIWsCDVZVB+ansr24iSVSrz8bRTgt+LQ=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -353,7 +353,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
               "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_osx_amd64",
-              "integrity": "sha256-RViSRHBvDl66eRr93F5zIZGSIJlix3L11wShb5Q2Z5M=",
+              "integrity": "sha256-CeUC3dKvDi8OSP5nTVjqw+4rMEkPqVtLWdiLLJogE6o=",
               "executable": true
             }
           },
@@ -361,7 +361,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
               "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_osx_arm64",
-              "integrity": "sha256-4YN1w0d7Oi5bDpwzuaIoyP1QzCCvkMDSxuTjfbIMtIY=",
+              "integrity": "sha256-2ate0QSXhzwbouVV7SLLTezmEIB1xQYKeWw7Jb00hgQ=",
               "executable": true
             }
           },
@@ -369,7 +369,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
               "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/microdnf_linux_amd64",
-              "integrity": "sha256-B+ZRWNf0yQce3MJaUruQExFAKir+uVPSghtBRtBD3mg=",
+              "integrity": "sha256-rI5xWx1HqglmqYwVReUAJ9xH2XvHqq/2Fn9FRKEFLUs=",
               "executable": true
             }
           },
@@ -377,7 +377,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
               "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/microdnf_linux_arm64",
-              "integrity": "sha256-s1NgzY0+925rHFFFzwfBm+bBfsuHaLQCceyVvAeyzwM=",
+              "integrity": "sha256-HP133wjJ/4D1dmsTmTYzcJPqQXoilHmBEdnmQM9G3Ss=",
               "executable": true
             }
           },
@@ -385,7 +385,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
               "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/microdnf_osx_amd64",
-              "integrity": "sha256-JlyIrSkZpYvcKD/cMA0C2M3HruQRDu4zQ4nx5u+dumM=",
+              "integrity": "sha256-iCK4GdRjcBp233vRBIsoY8p6djbZEcQyesiohnPjJeM=",
               "executable": true
             }
           },
@@ -393,7 +393,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
               "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/microdnf_osx_arm64",
-              "integrity": "sha256-TT00eeRt3aUllVpSOZ/PtqL2sHt+d8vGFMndfuAZ4g4=",
+              "integrity": "sha256-LTPpKkbKcTemkMzkw1r2nKoz4Ns6g96l88fzkQeA95U=",
               "executable": true
             }
           },
@@ -430,15 +430,15 @@
             }
           },
           "microdnf": {
-            "repoRuleId": "@@//microdnf:extensions.bzl%microdnf_host_alias_repo",
+            "repoRuleId": "@@//microdnf/private:extensions.bzl%microdnf_host_alias_repo",
             "attributes": {}
           },
           "rpm2archive": {
-            "repoRuleId": "@@//microdnf:extensions.bzl%rpm2archive_host_alias_repo",
+            "repoRuleId": "@@//microdnf/private:extensions.bzl%rpm2archive_host_alias_repo",
             "attributes": {}
           },
           "dnf_lock": {
-            "repoRuleId": "@@//microdnf:extensions.bzl%dnf_lock_host_alias_repo",
+            "repoRuleId": "@@//microdnf/private:extensions.bzl%dnf_lock_host_alias_repo",
             "attributes": {}
           }
         }

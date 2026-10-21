@@ -1,7 +1,7 @@
 load("@bazel_lib//lib:transitions.bzl", "platform_transition_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("//bazel:gresource.bzl", "glib_compile_resources")
-load("//bazel:platforms.bzl", "SUPPORTED_PLATFORMS")
+load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 
 package(default_visibility = ["//visibility:public"])
 

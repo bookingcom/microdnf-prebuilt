@@ -53,8 +53,8 @@ for target in dnf_lock microdnf rpm2archive; do
   done
 done
 
-# 2. Generate microdnf/integrities.bzl with computed SRI hashes
-cat > microdnf/integrities.bzl << EOF
+# 2. Generate microdnf/private/integrities.bzl with computed SRI hashes
+cat > microdnf/private/integrities.bzl << EOF
 """Integrity checksums and URLs for prebuilt microdnf binaries."""
 
 RELEASE_TAG = "${TAG}"
@@ -64,12 +64,12 @@ INTEGRITIES = {
 EOF
 
 for name in $(echo "${!INTEGRITIES[@]}" | tr ' ' '\n' | sort); do
-  echo "    \"${name}\": \"${INTEGRITIES[${name}]}\"," >> microdnf/integrities.bzl
+  echo "    \"${name}\": \"${INTEGRITIES[${name}]}\"," >> microdnf/private/integrities.bzl
 done
 
-echo "}" >> microdnf/integrities.bzl
+echo "}" >> microdnf/private/integrities.bzl
 
-echo "Generated microdnf/integrities.bzl successfully."
+echo "Generated microdnf/private/integrities.bzl successfully."
 
 # 3. Assemble clean release package directory
 STAGING_DIR="$(mktemp -d)"
@@ -78,11 +78,7 @@ trap 'rm -rf "${STAGING_DIR}"' EXIT
 PREFIX="microdnf-prebuilt-${TAG#microdnf-prebuilt-}"
 PKG_DIR="${STAGING_DIR}/${PREFIX}"
 
-mkdir -p "${PKG_DIR}/bazel" "${PKG_DIR}/microdnf"
-
-# Copy minimal bazel/ contents (only platforms.bzl and empty BUILD.bazel)
-cp bazel/platforms.bzl "${PKG_DIR}/bazel/platforms.bzl"
-touch "${PKG_DIR}/bazel/BUILD.bazel"
+mkdir -p "${PKG_DIR}/microdnf/private"
 
 # Minimal root BUILD.bazel
 cat > "${PKG_DIR}/BUILD.bazel" << 'EOF'
@@ -129,12 +125,18 @@ register_toolchains(
 )
 EOF
 
-# Copy microdnf files (BUILD.bazel, defs.bzl, toolchain.bzl, extensions.bzl, integrities.bzl)
+# Copy microdnf public files (BUILD.bazel, extensions.bzl, extension.bzl)
 cp microdnf/BUILD.bazel "${PKG_DIR}/microdnf/BUILD.bazel"
-cp microdnf/defs.bzl "${PKG_DIR}/microdnf/defs.bzl"
-cp microdnf/toolchain.bzl "${PKG_DIR}/microdnf/toolchain.bzl"
 cp microdnf/extensions.bzl "${PKG_DIR}/microdnf/extensions.bzl"
-cp microdnf/integrities.bzl "${PKG_DIR}/microdnf/integrities.bzl"
+cp microdnf/extension.bzl "${PKG_DIR}/microdnf/extension.bzl"
+
+# Copy microdnf private files
+cp microdnf/private/BUILD.bazel "${PKG_DIR}/microdnf/private/BUILD.bazel"
+cp microdnf/private/defs.bzl "${PKG_DIR}/microdnf/private/defs.bzl"
+cp microdnf/private/toolchain.bzl "${PKG_DIR}/microdnf/private/toolchain.bzl"
+cp microdnf/private/extensions.bzl "${PKG_DIR}/microdnf/private/extensions.bzl"
+cp microdnf/private/integrities.bzl "${PKG_DIR}/microdnf/private/integrities.bzl"
+cp microdnf/private/platforms.bzl "${PKG_DIR}/microdnf/private/platforms.bzl"
 
 # 4. Create release tarball archive
 ARCHIVE_NAME="${TAG}.tar.gz"

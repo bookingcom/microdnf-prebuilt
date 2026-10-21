@@ -1,4 +1,4 @@
-load("//bazel:platforms.bzl", "SUPPORTED_PLATFORMS")
+load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 
 package(default_visibility = ["//visibility:public"])
 

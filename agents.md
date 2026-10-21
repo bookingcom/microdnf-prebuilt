@@ -37,23 +37,25 @@ The release source tarball (`microdnf-prebuilt-<tag>.tar.gz`) is a standalone, l
 
 ### Inclusion Rules
 - **Include**:
-  - `microdnf/` directory:
+  - `microdnf/` directory (Public API):
     - `BUILD.bazel`: Defines toolchain rules and host selection.
-    - `defs.bzl`: Re-exports toolchain and extension symbols.
+    - `extensions.bzl`: Public Bzlmod extension entrypoint.
+    - `extension.bzl`: Public alias for `extensions.bzl`.
+  - `microdnf/private/` directory (Internal implementation):
+    - `BUILD.bazel`: Private package boundary.
+    - `defs.bzl`: Internal definitions.
     - `toolchain.bzl`: Implements `microdnf_toolchain` rule and `MicrodnfInfo` provider.
     - `extensions.bzl`: Implements `microdnf_prebuilt_extension` and host alias repository rules.
     - `integrities.bzl`: Dynamically generated file containing SRI hashes and URLs for prebuilt binaries.
-  - `bazel/` directory:
-    - `platforms.bzl`: Platform CPU and OS definitions.
-    - `BUILD.bazel`: Empty file (package boundary).
+    - `platforms.bzl`: Supported target platforms definitions.
   - Root `BUILD.bazel`: Minimal public visibility rule (`package(default_visibility = ["//visibility:public"])`).
   - Root `MODULE.bazel`: Stripped module file.
 
 ### Exclusion Rules
 - **Exclude**:
+  - `bazel/`: Build-time platforms, registry, upstream tracking (`bazel/extensions.bzl`, `bazel/microdnf.BUILD.bazel`, `bazel/BUILD.bazel`, `bazel/gresource.bzl`).
   - `dnf/`: Upstream and local C source code, headers, and plugin implementations.
   - `bazel/3rdparty/`: Compilation dependencies registry.
-  - `bazel/extensions.bzl` & `bazel/microdnf.BUILD.bazel`: Build-time git repository tracking.
   - All C/C++ compilation leaf dependencies in `MODULE.bazel` (e.g., `libdnf`, `glib`, `rpm`, `llvm`, `libsolv`, `librepo`, `libmodulemd`, `json-c`, `uthash`, etc.). Downstream consumers only require prebuilt binary toolchains, not the compiler dependencies.
 
 ---
