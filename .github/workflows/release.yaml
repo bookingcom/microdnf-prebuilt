@@ -32,7 +32,7 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: false
-          repository-cache: true
+          repository-cache: false
 
       - name: Configure BuildBuddy Remote Cluster
         env:

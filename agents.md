@@ -101,8 +101,9 @@ INVOCATION_ID=$(uuidgen) && echo "Invocation ID: ${INVOCATION_ID}" && bazel <com
 ```
 
 ### Remote Execution, Cache & Output Download Modes
-- **Zero Disk Cache**: Local runner disk caching is disabled entirely across CI and Release workflows (`disk-cache: false` in `setup-bazel`). This ensures all builds query and populate BuildBuddy remote cache consistently, preventing cache warming divergence between workflows.
+- **Zero Disk Cache & Zero Repository Cache**: Local runner disk caching (`disk-cache: false`) and repository caching (`repository-cache: false`) are disabled entirely across CI and Release workflows. In addition, `build:rbe` sets `--disk_cache=` and `--repository_cache=`. This ensures all builds query and populate BuildBuddy remote cache and CAS consistently without runner disk caching divergence.
 - **Remote Cache Chunking**: Enabled `--experimental_remote_cache_chunking` in `.bazelrc` and CI configuration to chunk large blobs via FastCDC, optimizing remote CAS storage and transfer efficiency.
+- **Remote Repository Caching & Execution**: Enabled `startup --experimental_remote_repo_contents_cache` and `common --experimental_repo_remote_exec` to cache evaluated external repository contents remotely in CAS and allow remote execution of repository rules.
 - **Build Without the Bytes (`--remote_download_outputs=minimal`)**:
   - The default RBE and CI configuration (`build:rbe`, `build:ci`) enforces `--remote_download_outputs=minimal`.
   - In CI, builds and tests run completely without downloading remote artifacts.
