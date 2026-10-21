@@ -31,7 +31,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          disk-cache: false
           repository-cache: true
 
       - name: Configure BuildBuddy Remote Cluster
@@ -51,7 +51,7 @@ jobs:
         run: docker pull gcr.io/flame-public/rbe-ubuntu24-04:latest
 
       - name: Build All Release Targets
-        run: bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all --config=ci
+        run: bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all --config=ci --remote_download_outputs=toplevel
 
       - name: Package Release Assets & Generate Integrities
         id: pkg

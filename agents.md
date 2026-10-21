@@ -100,15 +100,17 @@ All Bazel commands (`build`, `test`, `run`, `cquery`, `query`, etc.) must be inv
 INVOCATION_ID=$(uuidgen) && echo "Invocation ID: ${INVOCATION_ID}" && bazel <command> --invocation_id=${INVOCATION_ID} <args>
 ```
 
-### Remote Execution & Output Download Modes
-- **BuildBuddy RBE**: Remote caching and execution are configured via `.bazelrc` and `.bazelrc.user`.
-- **`--remote_download_minimal` vs. Local Packaging**:
-  - The default RBE configuration uses `--remote_download_minimal`.
-  - When running packaging scripts (`package_release.sh`) or inspecting artifacts locally, Bazel symlinks in `bazel-bin/` require materialized files. Use:
+### Remote Execution, Cache & Output Download Modes
+- **Zero Disk Cache**: Local runner disk caching is disabled entirely across CI and Release workflows (`disk-cache: false` in `setup-bazel`). This ensures all builds query and populate BuildBuddy remote cache consistently, preventing cache warming divergence between workflows.
+- **Build Without the Bytes (`--remote_download_outputs=minimal`)**:
+  - The default RBE and CI configuration (`build:rbe`, `build:ci`) enforces `--remote_download_outputs=minimal`.
+  - In CI, builds and tests run completely without downloading remote artifacts.
+- **Downloading Needed Binaries for Packaging**:
+  - In release workflows or when running packaging scripts (`package_release.sh`), only the final top-level targets are materialized:
     ```bash
-    bazel build <targets> --remote_download_outputs=all
+    bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all --config=ci --remote_download_outputs=toplevel
     ```
-    or `--remote_download_outputs=toplevel` to ensure binaries are fully downloaded to the local disk.
+    This ensures only the 12 needed release binaries are downloaded to the runner while intermediate build artifacts stay in the remote CAS.
 
 ---
 

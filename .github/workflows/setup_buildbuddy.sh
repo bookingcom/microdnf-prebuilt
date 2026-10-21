@@ -26,7 +26,7 @@ build:rc --noslim_profile --experimental_profile_include_target_label --experime
 
 build:rbe --config=rc
 build:rbe --remote_executor=grpcs://${ENDPOINT}
-build:rbe --remote_download_outputs=toplevel
+build:rbe --remote_download_outputs=minimal
 build:rbe --remote_timeout=10m
 build:rbe --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 build:rbe --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64

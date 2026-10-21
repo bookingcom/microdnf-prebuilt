@@ -22,7 +22,7 @@ build --@curl//:http_only=false
 #build:rbe --extra_execution_platforms=//bazel:ubuntu24_04_amd64,@buildbuddy_toolchain//:platform_linux_x86_64
 build:rbe --spawn_strategy=remote
 build:rbe --remote_local_fallback=true
-build:rbe --remote_download_minimal
+build:rbe --remote_download_outputs=minimal
 build:rbe --nobuild_runfile_links
 build:rbe --remote_cache_compression
 build:rbe --noslim_profile
