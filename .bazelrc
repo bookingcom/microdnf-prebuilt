@@ -16,6 +16,7 @@ build --local_test_jobs=HOST_CPUS-2
 build --nobuild_runfile_links
 build --@curl//:ssl_lib=openssl
 build --@curl//:http_only=false
+build --experimental_remote_cache_chunking
 
 # Bazel RBE configuration profile targeting //bazel:ubuntu24_04_amd64
 #build:rbe --host_platform=//bazel:ubuntu24_04_amd64
