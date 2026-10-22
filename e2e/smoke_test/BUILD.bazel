@@ -1,4 +1,4 @@
-load("@microdnf_prebuilt//microdnf:defs.bzl", "rpm_archive")
+load("@microdnf_prebuilt//microdnf:defs.bzl", "rpm_archive", "rpm_extract")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -16,13 +16,30 @@ rpm_archive(
     rpms = ["@downstream_rpms//:tour"],
 )
 
+# Step 5 test: Extract files, dereference symlinks, mark executables
+rpm_extract(
+    name = "smoke_extracted",
+    archive = ":smoke_archive",
+    executables = [
+        "usr/bin/away",
+    ],
+    files = [
+        "etc/rollup",
+        "usr/bin/away",
+    ],
+    rpm2files_tool = "@microdnf_tools//:rpm2files",
+)
+
 sh_test(
-    name = "smoke_rpm_archive_test",
-    srcs = ["test_archive.sh"],
+    name = "smoke_run_test",
+    srcs = ["test_extract.sh"],
     args = [
-        "$(location :smoke_archive)",
+        "$(location :smoke_extracted/usr/bin/away)",
+        "$(location :smoke_extracted/etc/rollup)",
     ],
     data = [
-        ":smoke_archive",
+        ":smoke_extracted",
+        ":smoke_extracted/etc/rollup",
+        ":smoke_extracted/usr/bin/away",
     ],
 )

@@ -225,3 +225,20 @@ filegroup(
         for platform in SUPPORTED_PLATFORMS
     ],
 )
+
+[
+    platform_transition_binary(
+        name = "rpm2files_" + platform,
+        binary = "//rpm2files:rpm2files",
+        target_platform = "//bazel:" + platform,
+    )
+    for platform in SUPPORTED_PLATFORMS
+]
+
+filegroup(
+    name = "rpm2files_all",
+    srcs = [
+        ":rpm2files_" + platform
+        for platform in SUPPORTED_PLATFORMS
+    ],
+)

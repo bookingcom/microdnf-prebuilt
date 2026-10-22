@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "MODULE.bazel",
+    "go.mod",
 ])
 
 filegroup(
@@ -49,12 +50,31 @@ TARGETS = [
     for target in TARGETS
 ]
 
+alias(
+    name = "rpm2files",
+    actual = "//rpm2files:rpm2files",
+)
+
+[
+    alias(
+        name = "rpm2files_" + platform,
+        actual = "//dnf:rpm2files_" + platform,
+    )
+    for platform in SUPPORTED_PLATFORMS
+]
+
+alias(
+    name = "rpm2files_all",
+    actual = "//dnf:rpm2files_all",
+)
+
 genrule(
     name = "tools_archive",
     srcs = [
         ":dnf_lock",
         ":microdnf",
         ":rpm2archive",
+        ":rpm2files",
     ],
     outs = ["microdnf_tools.tar.gz"],
     cmd = """
@@ -64,6 +84,7 @@ cp $(location :dnf_lock) "$$TMP_DIR/dnf_lock"
 cp $(location :dnf_lock) "$$TMP_DIR/lock"
 cp $(location :microdnf) "$$TMP_DIR/microdnf"
 cp $(location :rpm2archive) "$$TMP_DIR/rpm2archive"
-tar -czf $@ -C "$$TMP_DIR" dnf_lock lock microdnf rpm2archive
+cp $(location :rpm2files) "$$TMP_DIR/rpm2files"
+tar -czf $@ -C "$$TMP_DIR" dnf_lock lock microdnf rpm2archive rpm2files
 """,
 )

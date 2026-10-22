@@ -11,6 +11,12 @@ bazel_dep(name = "bazel_lib", version = "3.7.2", dev_dependency = True)
 bazel_dep(name = "rules_cc", version = "0.2.26", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 
+# Hermetic Go toolchain for rpm2files from BCR
+bazel_dep(name = "rules_go", version = "0.64.2", dev_dependency = True)
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
+go_sdk.from_file(go_mod = "//:go.mod")
+
 # Hermetic Python 3.14 via aspect_rules_py from BCR
 bazel_dep(name = "aspect_rules_py", version = "2.0.0-alpha.8", dev_dependency = True)
 

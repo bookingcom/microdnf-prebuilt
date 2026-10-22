@@ -7,7 +7,7 @@ def _microdnf_tools_repo_impl(repo_ctx):
 
     build_content = """package(default_visibility = ["//visibility:public"])
 
-exports_files(["lock", "rpm2archive", "microdnf", "dnf_lock"])
+exports_files(["lock", "rpm2archive", "microdnf", "dnf_lock", "rpm2files"])
 """
     repo_ctx.file("BUILD.bazel", build_content)
 

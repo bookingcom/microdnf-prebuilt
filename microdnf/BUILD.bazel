@@ -56,6 +56,12 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "rpm2files",
+    actual = "//rpm2files:rpm2files",
+    visibility = ["//visibility:public"],
+)
+
 # Host toolchain implementation selects the prebuilt binary matching host platform
 microdnf_toolchain(
     name = "toolchain_impl_host",

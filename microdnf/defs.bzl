@@ -12,6 +12,10 @@ load(
     _rpm2archive_host_alias_repo = "rpm2archive_host_alias_repo",
 )
 load(
+    "//microdnf/private:extract.bzl",
+    _rpm_extract = "rpm_extract",
+)
+load(
     "//microdnf/private:lock.bzl",
     _rpm_lock = "rpm_lock",
 )
@@ -30,3 +34,4 @@ dnf_lock_host_alias_repo = _dnf_lock_host_alias_repo
 
 rpm_lock = _rpm_lock
 rpm_archive = _rpm_archive
+rpm_extract = _rpm_extract

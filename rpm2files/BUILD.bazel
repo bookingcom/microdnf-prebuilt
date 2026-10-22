@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "rpm2files",
+    srcs = ["main.go"],
+    data = ["@zstd//:zstd_cli"],
+    deps = ["@rules_go//go/runfiles"],
+    pure = "on",
+)
+
+filegroup(
+    name = "all_files",
+    srcs = glob(["*"]),
+)

@@ -1,6 +1,6 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_tests", "default_test_runner")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//microdnf:defs.bzl", "rpm_archive", "rpm_lock")
+load("//microdnf:defs.bzl", "rpm_archive", "rpm_extract", "rpm_lock")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,11 +12,13 @@ sh_test(
         "$(location //:microdnf)",
         "$(location //:rpm2archive)",
         "$(location //:dnf_lock)",
+        "$(location //:rpm2files)",
     ],
     data = [
         "//:dnf_lock",
         "//:microdnf",
         "//:rpm2archive",
+        "//:rpm2files",
     ],
 )
 
@@ -73,6 +75,33 @@ sh_test(
     ],
     data = [
         ":tour_archive",
+    ],
+)
+
+# Step 5 test: Extract files, dereference symlinks, mark executables
+rpm_extract(
+    name = "extracted_tour",
+    archive = ":tour_archive",
+    executables = [
+        "usr/bin/away",
+    ],
+    files = [
+        "etc/rollup",
+        "usr/bin/away",
+    ],
+)
+
+sh_test(
+    name = "test_rpm_extract_test",
+    srcs = ["test_extract.sh"],
+    args = [
+        "$(location :extracted_tour/usr/bin/away)",
+        "$(location :extracted_tour/etc/rollup)",
+    ],
+    data = [
+        ":extracted_tour",
+        ":extracted_tour/etc/rollup",
+        ":extracted_tour/usr/bin/away",
     ],
 )
 

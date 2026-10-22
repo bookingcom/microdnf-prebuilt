@@ -29,3 +29,12 @@ RpmArchiveInfo = provider(
         "rpms": "Depset of input RPM files",
     },
 )
+
+RpmExtractedFilesInfo = provider(
+    doc = "Propagates files extracted from an rpm_archive and executable targets.",
+    fields = {
+        "arch": "Architecture of the extracted files",
+        "executables": "Depset of executable File targets with 0755 permissions",
+        "files": "Depset of all extracted File objects",
+    },
+)
