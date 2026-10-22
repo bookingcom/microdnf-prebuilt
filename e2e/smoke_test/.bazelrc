@@ -1,0 +1,5 @@
+common --registry=file://%workspace%/../../bazel/3rdparty
+common --registry=https://bcr.bazel.build
+
+common --enable_bzlmod
+test --test_output=errors

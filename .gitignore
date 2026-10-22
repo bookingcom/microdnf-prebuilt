@@ -3,6 +3,8 @@
 /.untether-outbox/
 /pending/
 *.tar.gz
+repodata/
+**/repodata/
 release_notes.md
 release_assets/
 

@@ -1,9 +1,14 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "defs.bzl",
     "extensions.bzl",
     "integrities.bzl",
     "platforms.bzl",
+    "prebuilt.bzl",
     "toolchain.bzl",
 ])
+
+filegroup(
+    name = "all_files",
+    srcs = glob(["*"]),
+)

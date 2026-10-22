@@ -2,6 +2,7 @@
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 load("//microdnf/private:integrities.bzl", "BASE_URL", "INTEGRITIES")
+load("//microdnf/private:prebuilt.bzl", "microdnf_tools_repo")
 
 def _detect_platform(rctx):
     os_name = rctx.os.name.lower()
@@ -85,4 +86,26 @@ def _microdnf_prebuilt_extension_impl(module_ctx):
 
 microdnf_prebuilt_extension = module_extension(
     implementation = _microdnf_prebuilt_extension_impl,
+)
+
+_prebuilt_tag = tag_class(
+    attrs = {
+        "name": attr.string(default = "microdnf_tools"),
+        "archive": attr.label(mandatory = True, allow_single_file = True),
+    },
+)
+
+def _tools_extension_impl(module_ctx):
+    for mod in module_ctx.modules:
+        for p_tag in mod.tags.prebuilt:
+            microdnf_tools_repo(
+                name = p_tag.name,
+                archive = p_tag.archive,
+            )
+
+tools = module_extension(
+    implementation = _tools_extension_impl,
+    tag_classes = {
+        "prebuilt": _prebuilt_tag,
+    },
 )

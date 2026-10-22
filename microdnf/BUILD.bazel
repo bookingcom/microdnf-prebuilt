@@ -4,9 +4,16 @@ load("//microdnf/private:toolchain.bzl", "microdnf_toolchain")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "defs.bzl",
     "extension.bzl",
     "extensions.bzl",
+    "prebuilt.bzl",
 ])
+
+filegroup(
+    name = "all_files",
+    srcs = glob(["*"]),
+)
 
 toolchain_type(
     name = "toolchain_type",

@@ -1,6 +1,23 @@
+load("@bazel_lib//lib:copy_file.bzl", "copy_file")
 load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 
 package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "MODULE.bazel",
+])
+
+filegroup(
+    name = "microdnf_module_files",
+    srcs = [
+        ":tools_archive",
+        "BUILD.bazel",
+        "MODULE.bazel",
+        "//microdnf:all_files",
+        "//microdnf/private:all_files",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 TARGETS = [
     "microdnf",
@@ -33,4 +50,42 @@ TARGETS = [
     for target in TARGETS
 ]
 
+copy_file(
+    name = "copy_dnf_lock",
+    src = ":dnf_lock",
+    out = "tools/dnf_lock",
+    is_executable = True,
+)
 
+copy_file(
+    name = "copy_lock",
+    src = ":dnf_lock",
+    out = "tools/lock",
+    is_executable = True,
+)
+
+copy_file(
+    name = "copy_microdnf",
+    src = ":microdnf",
+    out = "tools/microdnf",
+    is_executable = True,
+)
+
+copy_file(
+    name = "copy_rpm2archive",
+    src = ":rpm2archive",
+    out = "tools/rpm2archive",
+    is_executable = True,
+)
+
+genrule(
+    name = "tools_archive",
+    srcs = [
+        ":copy_dnf_lock",
+        ":copy_lock",
+        ":copy_microdnf",
+        ":copy_rpm2archive",
+    ],
+    outs = ["microdnf_tools.tar.gz"],
+    cmd = "tar -czf $@ -C $(RULEDIR)/tools dnf_lock lock microdnf rpm2archive",
+)

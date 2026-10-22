@@ -1,0 +1,44 @@
+load("@aspect_rules_py//py:defs.bzl", "py_binary")
+load("@bazel_lib//lib:run_binary.bzl", "run_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "generate_repodata.py",
+    "test.repo",
+])
+
+py_binary(
+    name = "generate_repodata",
+    srcs = ["generate_repodata.py"],
+    main = "generate_repodata.py",
+)
+
+run_binary(
+    name = "generate_test_repodata",
+    tool = ":generate_repodata",
+    args = [
+        "--out-dir",
+        "$(RULEDIR)/repo/repodata",
+    ],
+    outs = [
+        "repo/repodata/filelists.xml.gz",
+        "repo/repodata/other.xml.gz",
+        "repo/repodata/prestodelta.xml.gz",
+        "repo/repodata/primary.xml.gz",
+        "repo/repodata/repomd.xml",
+        "repo/repodata/updateinfo.xml.gz",
+    ],
+)
+
+filegroup(
+    name = "test_repo_files",
+    srcs = [
+        ":generate_test_repodata",
+        "repo/disagree/mystery-devel-19.67-1.noarch.rpm",
+        "repo/disagree/tour-4-6.noarch.rpm",
+        "repo/drpms/tour-4-5_4-6.noarch.drpm",
+        "repo/mystery-devel-19.67-1.noarch.rpm",
+        "repo/tour-4-6.noarch.rpm",
+    ],
+)

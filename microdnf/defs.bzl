@@ -1,4 +1,4 @@
-"""Public API for microdnf-prebuilt."""
+"""Public definitions entrypoint for microdnf."""
 
 load(
     "//microdnf/private:extensions.bzl",

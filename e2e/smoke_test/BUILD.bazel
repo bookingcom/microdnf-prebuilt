@@ -1,0 +1,20 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+sh_test(
+    name = "smoke_tools_test",
+    srcs = ["test_tools.sh"],
+    args = [
+        "$(location @microdnf_tools//:microdnf)",
+        "$(location @microdnf_tools//:rpm2archive)",
+        "$(location @microdnf_tools//:dnf_lock)",
+        "$(location @microdnf_tools//:lock)",
+    ],
+    data = [
+        "@microdnf_tools//:dnf_lock",
+        "@microdnf_tools//:lock",
+        "@microdnf_tools//:microdnf",
+        "@microdnf_tools//:rpm2archive",
+    ],
+)
