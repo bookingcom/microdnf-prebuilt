@@ -26,6 +26,7 @@ jobs:
           bazelisk-cache: true
           disk-cache: false
           repository-cache: false
+          output-base: ""
 
       - name: Configure BuildBuddy Remote Cluster
         env:
@@ -36,4 +37,4 @@ jobs:
         run: bazel build //... //:microdnf_all //:rpm2archive_all //:dnf_lock_all --config=ci
 
       - name: Test
-        run: bazel test //... --config=ci || true
+        run: bazel test //... --config=ci

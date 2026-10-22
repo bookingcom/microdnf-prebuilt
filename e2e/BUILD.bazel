@@ -75,6 +75,7 @@ bazel_integration_tests(
         "dockerNetwork": "bridge",
         "network": "bridge",
     },
+    startup_options = "--nohome_rc --nosystem_rc",
     tags = [
         "requires-network",
     ],
