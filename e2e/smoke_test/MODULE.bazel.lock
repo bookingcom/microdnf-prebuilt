@@ -249,7 +249,7 @@
     },
     "@@microdnf_prebuilt+//:extensions.bzl%rpm": {
       "general": {
-        "bzlTransitiveDigest": "+GG/lNEqZ1VsAkwbAKOFnoqaGTLgJsIudgkUqXc5q8k=",
+        "bzlTransitiveDigest": "LKYPfep+rrP/uEB4qy/LGTU722WKQhI8i4IxYYd+NxU=",
         "usagesDigest": "idl6c+nQtaOH1Lj9YCVYkbA3gAdFVSaGtXazGNtMzVM=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -267,7 +267,7 @@
     },
     "@@microdnf_prebuilt+//:extensions.bzl%tools": {
       "general": {
-        "bzlTransitiveDigest": "+GG/lNEqZ1VsAkwbAKOFnoqaGTLgJsIudgkUqXc5q8k=",
+        "bzlTransitiveDigest": "LKYPfep+rrP/uEB4qy/LGTU722WKQhI8i4IxYYd+NxU=",
         "usagesDigest": "78uC/Aht7i7aeuGZAH9ifChUp+DYoWGRXWKFW3tjtRM=",
         "recordedInputs": [
           "REPO_MAPPING:,microdnf_prebuilt microdnf_prebuilt+"

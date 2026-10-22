@@ -85,12 +85,27 @@ def _rpm_repository_impl(repo_ctx):
 
                 if url.startswith("file://"):
                     local_path = url[7:]
-                    if not repo_ctx.path(local_path).exists:
-                        # Fallback: look near lockfile or in repo
-                        fname = local_path.split("/")[-1]
-                        candidate = "%s/%s" % (lf.dirname, fname)
-                        if repo_ctx.path(candidate).exists:
-                            url = "file://" + str(repo_ctx.path(candidate))
+                    fname = local_path.split("/")[-1]
+                    lf_path = repo_ctx.path(lf)
+                    lf_dir = str(lf_path.dirname)
+
+                    # Look near lockfile first, then try the direct path
+                    found_path = None
+                    for candidate in [
+                        "%s/%s" % (lf_dir, fname),
+                        "%s/repo/%s" % (lf_dir, fname),
+                        "%s/repo/disagree/%s" % (lf_dir, fname),
+                    ]:
+                        cand = repo_ctx.path(candidate)
+                        if cand.exists:
+                            found_path = cand
+                            break
+
+                    if not found_path and repo_ctx.path(local_path).exists:
+                        found_path = repo_ctx.path(local_path)
+
+                    if found_path:
+                        url = "file://" + str(found_path)
 
                 download_kwargs = {
                     "url": url,

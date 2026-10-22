@@ -505,7 +505,7 @@
     },
     "//rpm:extensions.bzl%rpm": {
       "general": {
-        "bzlTransitiveDigest": "P1GMs+pGxiZWIaV3uN4wJsAZ8B4XTlcheiJp5GCHw/M=",
+        "bzlTransitiveDigest": "sDGJvXc6acuvQk9JE7LHmCDNUL5beQeGxwSLgds7kKk=",
         "usagesDigest": "alTQHrzOM4v9z9IXdYXzy7REwWPUjf+h6/4NAD23z50=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
