@@ -2,6 +2,10 @@ load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "defs.bzl",
+])
+
 TARGETS = [
     "microdnf",
     "rpm2archive",
@@ -32,5 +36,25 @@ TARGETS = [
     )
     for target in TARGETS
 ]
+
+genrule(
+    name = "tools_archive",
+    srcs = [
+        "//:dnf_lock",
+        "//:rpm2archive",
+        "//:microdnf",
+    ],
+    outs = ["microdnf_tools.tar.gz"],
+    cmd = """
+        TMP=$$(mktemp -d)
+        cp $(location //:dnf_lock) $$TMP/dnf_lock
+        cp $(location //:dnf_lock) $$TMP/lock
+        cp $(location //:rpm2archive) $$TMP/rpm2archive
+        cp $(location //:microdnf) $$TMP/microdnf
+        chmod 0755 $$TMP/dnf_lock $$TMP/lock $$TMP/rpm2archive $$TMP/microdnf
+        tar -czf $@ -C $$TMP dnf_lock lock rpm2archive microdnf
+        rm -rf $$TMP
+    """,
+)
 
 

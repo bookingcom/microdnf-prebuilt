@@ -42,6 +42,11 @@ process_global_option (const gchar  *option_name,
     {
       dnf_context_set_release_ver (ctx, value);
     }
+  else if (g_strcmp0 (option_name, "--reposdir") == 0)
+    {
+      g_auto(GStrv) reposdir = g_strsplit (value, ",", -1);
+      dnf_context_set_repos_dir (ctx, (const gchar * const *)reposdir);
+    }
   else if (g_strcmp0 (option_name, "--setopt") == 0)
     {
       g_auto(GStrv) setopt = g_strsplit (value, "=", 2);
@@ -138,6 +143,7 @@ main (int argc, char *argv[])
     { "installroot", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Set install root", "PATH" },
     { "refresh", '\0', 0, G_OPTION_ARG_NONE, &opt_refresh, "Set metadata as expired", NULL },
     { "releasever", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override $releasever", "RELEASEVER" },
+    { "reposdir", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override repository configuration directory", "PATH" },
     { "setopt", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override configuration option", "<opt>=<val>" },
     { NULL }
   };
@@ -159,6 +165,7 @@ main (int argc, char *argv[])
           const GOptionEntry entries[] = {
             { "output", 'o', 0, G_OPTION_ARG_NONE, NULL, "Output JSON lockfile path (defaults to stdout)", "FILE" },
             { "archlist", '\0', 0, G_OPTION_ARG_NONE, NULL, "Limit query to packages of given architectures", "ARCH,..." },
+            { "exclude", 'x', 0, G_OPTION_ARG_NONE, NULL, "Exclude package and its dependencies unless directly requested", "PKG,..." },
             { NULL }
           };
           g_option_context_add_main_entries (help_ctx, entries, NULL);
