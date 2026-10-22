@@ -1,6 +1,6 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_tests", "default_test_runner")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//microdnf:defs.bzl", "rpm_lock")
+load("//microdnf:defs.bzl", "rpm_archive", "rpm_lock")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -55,6 +55,24 @@ sh_test(
     ],
     data = [
         "@test_rpms//:tour",
+    ],
+)
+
+# Step 4 test: Archive generation from RPM targets
+rpm_archive(
+    name = "tour_archive",
+    compression = "gzip",
+    rpms = ["@test_rpms//:tour"],
+)
+
+sh_test(
+    name = "test_rpm_archive_test",
+    srcs = ["test_archive.sh"],
+    args = [
+        "$(location :tour_archive)",
+    ],
+    data = [
+        ":tour_archive",
     ],
 )
 

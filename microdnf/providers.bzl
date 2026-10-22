@@ -2,9 +2,11 @@
 
 load(
     "//microdnf/private:providers.bzl",
+    _RpmArchiveInfo = "RpmArchiveInfo",
     _RpmInfo = "RpmInfo",
     _RpmLockFileInfo = "RpmLockFileInfo",
 )
 
 RpmLockFileInfo = _RpmLockFileInfo
 RpmInfo = _RpmInfo
+RpmArchiveInfo = _RpmArchiveInfo

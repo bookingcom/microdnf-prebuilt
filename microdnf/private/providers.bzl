@@ -20,3 +20,12 @@ RpmInfo = provider(
         "version": "Package version",
     },
 )
+
+RpmArchiveInfo = provider(
+    doc = "Propagates generated archive file and architecture from rpm_archive.",
+    fields = {
+        "arch": "Resolved target architecture of the archive",
+        "archive": "Output archive File object (.tar, .tar.gz, .tar.zst)",
+        "rpms": "Depset of input RPM files",
+    },
+)

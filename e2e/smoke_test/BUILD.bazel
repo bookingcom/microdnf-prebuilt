@@ -1,3 +1,4 @@
+load("@microdnf_prebuilt//microdnf:defs.bzl", "rpm_archive")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -8,30 +9,20 @@ exports_files([
     "x86_64.lock.json",
 ])
 
-sh_test(
-    name = "smoke_tools_test",
-    srcs = ["test_tools.sh"],
-    args = [
-        "$(location @microdnf_tools//:microdnf)",
-        "$(location @microdnf_tools//:rpm2archive)",
-        "$(location @microdnf_tools//:dnf_lock)",
-        "$(location @microdnf_tools//:lock)",
-    ],
-    data = [
-        "@microdnf_tools//:dnf_lock",
-        "@microdnf_tools//:lock",
-        "@microdnf_tools//:microdnf",
-        "@microdnf_tools//:rpm2archive",
-    ],
+# Step 4 test: Create archive out of requested RPM targets and transitive dependencies
+rpm_archive(
+    name = "smoke_archive",
+    compression = "gzip",
+    rpms = ["@downstream_rpms//:tour"],
 )
 
 sh_test(
-    name = "smoke_rpm_repo_test",
-    srcs = ["test_rpm_repo.sh"],
+    name = "smoke_rpm_archive_test",
+    srcs = ["test_archive.sh"],
     args = [
-        "$(location @downstream_rpms//:tour)",
+        "$(location :smoke_archive)",
     ],
     data = [
-        "@downstream_rpms//:tour",
+        ":smoke_archive",
     ],
 )

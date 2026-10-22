@@ -47,6 +47,15 @@ PLATFORM_CONSTRAINTS = {
     for platform in SUPPORTED_PLATFORMS
 ]
 
+alias(
+    name = "rpm2archive",
+    actual = select({
+        ":is_" + platform: "@rpm2archive_" + platform + "//file"
+        for platform in SUPPORTED_PLATFORMS
+    }),
+    visibility = ["//visibility:public"],
+)
+
 # Host toolchain implementation selects the prebuilt binary matching host platform
 microdnf_toolchain(
     name = "toolchain_impl_host",
