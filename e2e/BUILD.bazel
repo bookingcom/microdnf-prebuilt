@@ -1,5 +1,6 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_tests", "default_test_runner")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//microdnf:defs.bzl", "rpm_lock")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,6 +17,32 @@ sh_test(
         "//:dnf_lock",
         "//:microdnf",
         "//:rpm2archive",
+    ],
+)
+
+# Step 2 test: Lockfile generation with RPM exclusion
+rpm_lock(
+    name = "test_generated_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    exclude = ["mystery-devel"],
+    out = "test_generated_lock.lock.json",
+    packages = ["tour"],
+    releasever = "9",
+    repo_config = "//e2e/testdata:test.repo",
+    repo_files = ["//e2e/testdata:test_repo_files"],
+)
+
+sh_test(
+    name = "rpm_lock_test",
+    srcs = ["test_lock.sh"],
+    args = [
+        "$(location :test_generated_lock.lock.json)",
+    ],
+    data = [
+        ":test_generated_lock.lock.json",
     ],
 )
 
