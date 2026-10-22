@@ -4,8 +4,10 @@ load("@bazel_lib//lib:run_binary.bzl", "run_binary")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "aarch64.lock.json",
     "generate_repodata.py",
     "test.repo",
+    "x86_64.lock.json",
 ])
 
 py_binary(

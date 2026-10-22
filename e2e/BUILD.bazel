@@ -46,6 +46,18 @@ sh_test(
     ],
 )
 
+# Step 3 test: RPM proxy repository test
+sh_test(
+    name = "test_rpm_repository_test",
+    srcs = ["test_rpm_repo.sh"],
+    args = [
+        "$(location @test_rpms//:tour)",
+    ],
+    data = [
+        "@test_rpms//:tour",
+    ],
+)
+
 # Downstream integration test driven by rules_bazel_integration_test
 default_test_runner(
     name = "default_test_runner",

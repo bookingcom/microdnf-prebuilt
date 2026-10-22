@@ -3,6 +3,7 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 load("//microdnf/private:integrities.bzl", "BASE_URL", "INTEGRITIES")
 load("//microdnf/private:prebuilt.bzl", "microdnf_tools_repo")
+load("//microdnf/private:repository.bzl", "rpm_repository")
 
 def _detect_platform(rctx):
     os_name = rctx.os.name.lower()
@@ -107,5 +108,36 @@ tools = module_extension(
     implementation = _tools_extension_impl,
     tag_classes = {
         "prebuilt": _prebuilt_tag,
+    },
+)
+
+_repository_tag = tag_class(
+    attrs = {
+        "name": attr.string(mandatory = True),
+        "lock_file": attr.label(allow_single_file = [".json"]),
+        "lock_files": attr.label_list(allow_files = [".json"]),
+    },
+)
+
+def _rpm_extension_impl(module_ctx):
+    for mod in module_ctx.modules:
+        for repo_tag in mod.tags.repository:
+            lock_files = []
+            if repo_tag.lock_file:
+                lock_files.append(repo_tag.lock_file)
+            if repo_tag.lock_files:
+                for lf in repo_tag.lock_files:
+                    if lf not in lock_files:
+                        lock_files.append(lf)
+
+            rpm_repository(
+                name = repo_tag.name,
+                lock_files = lock_files,
+            )
+
+rpm = module_extension(
+    implementation = _rpm_extension_impl,
+    tag_classes = {
+        "repository": _repository_tag,
     },
 )

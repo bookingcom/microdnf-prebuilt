@@ -104,6 +104,17 @@ use_repo(
     "build_bazel_bazel_9_3_0",
 )
 
+# Test RPM repository for e2e testing
+rpm = use_extension("//microdnf:extensions.bzl", "rpm", dev_dependency = True)
+rpm.repository(
+    name = "test_rpms",
+    lock_files = [
+        "//e2e/testdata:x86_64.lock.json",
+        "//e2e/testdata:aarch64.lock.json",
+    ],
+)
+use_repo(rpm, "test_rpms")
+
 # Upstream microdnf tracked as a bzlmod extension
 microdnf = use_extension(
     "//bazel:extensions.bzl",

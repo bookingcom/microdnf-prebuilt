@@ -2,6 +2,12 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "aarch64.lock.json",
+    "tour-4-6.noarch.rpm",
+    "x86_64.lock.json",
+])
+
 sh_test(
     name = "smoke_tools_test",
     srcs = ["test_tools.sh"],
@@ -16,5 +22,16 @@ sh_test(
         "@microdnf_tools//:lock",
         "@microdnf_tools//:microdnf",
         "@microdnf_tools//:rpm2archive",
+    ],
+)
+
+sh_test(
+    name = "smoke_rpm_repo_test",
+    srcs = ["test_rpm_repo.sh"],
+    args = [
+        "$(location @downstream_rpms//:tour)",
+    ],
+    data = [
+        "@downstream_rpms//:tour",
     ],
 )

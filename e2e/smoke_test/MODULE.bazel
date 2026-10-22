@@ -17,3 +17,13 @@ tools.prebuilt(
     archive = "@microdnf_prebuilt//:microdnf_tools.tar.gz",
 )
 use_repo(tools, "microdnf_tools")
+
+rpm = use_extension("@microdnf_prebuilt//microdnf:extensions.bzl", "rpm")
+rpm.repository(
+    name = "downstream_rpms",
+    lock_files = [
+        "//:x86_64.lock.json",
+        "//:aarch64.lock.json",
+    ],
+)
+use_repo(rpm, "downstream_rpms")
