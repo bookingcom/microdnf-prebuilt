@@ -1,0 +1,85 @@
+load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_tests", "default_test_runner", "integration_test_utils")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//rpm:defs.bzl", "rpm_archive", "rpm_extract", "rpm_lock")
+
+package(default_visibility = ["//visibility:public"])
+
+# Step 1 test: Lockfile generation with RPM exclusion
+rpm_lock(
+    name = "test_generated_lock",
+    arch = "x86_64,noarch",
+    exclude = ["mystery-devel"],
+    out = "test_generated_lock.lock.json",
+    packages = ["tour"],
+    releasever = "9",
+    repo_config = "//e2e/testdata:test.repo",
+    repo_files = ["//e2e/testdata:test_repo_files"],
+)
+
+# Step 3 test: Archive generation from RPM targets
+rpm_archive(
+    name = "tour_archive",
+    compression = "gzip",
+    rpms = ["@test_rpms//:tour"],
+)
+
+# Step 4 test: Extract files, dereference symlinks, mark executables
+rpm_extract(
+    name = "extracted_tour",
+    archive = ":tour_archive",
+    executables = [
+        "usr/bin/away",
+    ],
+    files = [
+        "etc/rollup",
+        "usr/bin/away",
+    ],
+)
+
+# Verification test for Step 1, Step 3, Step 4
+sh_test(
+    name = "e2e_components_test",
+    srcs = ["test_components.sh"],
+    args = [
+        "$(location :test_generated_lock.lock.json)",
+        "$(location :tour_archive)",
+        "$(location :extracted_tour_away)",
+    ],
+    data = [
+        ":extracted_tour",
+        ":extracted_tour_away",
+        ":test_generated_lock.lock.json",
+        ":tour_archive",
+        "//e2e/testdata:test_repo_files",
+    ],
+)
+
+# Downstream integration test driven by rules_bazel_integration_test
+default_test_runner(
+    name = "default_test_runner",
+    bazel_cmds = [
+        "info",
+        "build //...",
+        "test //...",
+    ],
+)
+
+bazel_integration_tests(
+    name = "downstream_e2e_tests",
+    bazel_versions = ["9.3.0"],
+    exec_properties = {
+        "dockerNetwork": "bridge",
+        "network": "bridge",
+    },
+    tags = [
+        "requires-network",
+    ],
+    test_runner = ":default_test_runner",
+    workspace_files = [
+        "//:microdnf_module_files",
+    ] + glob(
+        ["smoke_test/**"],
+        exclude = ["smoke_test/bazel-*/**"],
+    ),
+    workspace_path = "e2e/smoke_test",
+)

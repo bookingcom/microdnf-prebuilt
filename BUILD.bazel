@@ -3,9 +3,25 @@ load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "MODULE.bazel",
     "defs.bzl",
     "extensions.bzl",
 ])
+
+filegroup(
+    name = "microdnf_module_files",
+    srcs = [
+        ":tools_archive",
+        "BUILD.bazel",
+        "MODULE.bazel",
+        "defs.bzl",
+        "extensions.bzl",
+        "//microdnf:all_files",
+        "//microdnf/private:all_files",
+        "//rpm:all_files",
+    ],
+    visibility = ["//visibility:public"],
+)
 
 TARGETS = [
     "microdnf",

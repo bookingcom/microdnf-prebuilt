@@ -1,0 +1,31 @@
+module(
+    name = "smoke_test",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "microdnf_prebuilt", version = "3.10.2")
+local_path_override(
+    module_name = "microdnf_prebuilt",
+    path = "../..",
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+
+# Downstream consumption of prebuilt tools archive
+tools = use_extension("@microdnf_prebuilt//:extensions.bzl", "tools")
+tools.prebuilt(
+    archive = "@microdnf_prebuilt//:microdnf_tools.tar.gz",
+)
+use_repo(tools, "microdnf_tools")
+
+# Proxy repository exposing only requested RPMs from lockfiles
+rpm = use_extension("@microdnf_prebuilt//:extensions.bzl", "rpm")
+rpm.repository(
+    name = "downstream_rpms",
+    lock_files = [
+        "//:x86_64.lock.json",
+        "//:aarch64.lock.json",
+    ],
+)
+use_repo(rpm, "downstream_rpms")

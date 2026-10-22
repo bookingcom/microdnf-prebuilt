@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "aarch64.lock.json",
+    "test.repo",
+    "x86_64.lock.json",
+])
+
+filegroup(
+    name = "test_repo_files",
+    srcs = glob(["repo/**"]),
+)

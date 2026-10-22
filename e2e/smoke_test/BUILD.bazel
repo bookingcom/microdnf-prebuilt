@@ -1,0 +1,44 @@
+load("@microdnf_prebuilt//:defs.bzl", "rpm_archive", "rpm_extract")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "aarch64.lock.json",
+    "tour-4-6.noarch.rpm",
+    "x86_64.lock.json",
+])
+
+# Step 3: Create archive out of requested RPM targets and transitive dependencies
+rpm_archive(
+    name = "smoke_archive",
+    compression = "gzip",
+    rpms = ["@downstream_rpms//:tour"],
+    rpm2archive_tool = "@microdnf_tools//:rpm2archive",
+)
+
+# Step 4: Extract files, dereference symlinks, mark executables
+rpm_extract(
+    name = "smoke_extracted",
+    archive = ":smoke_archive",
+    executables = [
+        "usr/bin/away",
+    ],
+    files = [
+        "etc/rollup",
+        "usr/bin/away",
+    ],
+)
+
+# Verify execution downstream
+sh_test(
+    name = "smoke_run_test",
+    srcs = ["test.sh"],
+    args = [
+        "$(location :smoke_extracted_away)",
+    ],
+    data = [
+        ":smoke_extracted",
+        ":smoke_extracted_away",
+    ],
+)

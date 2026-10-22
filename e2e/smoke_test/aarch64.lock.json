@@ -1,0 +1,22 @@
+{
+  "version":1,
+  "arch":"aarch64,noarch",
+  "requested":[
+    "tour"
+  ],
+  "packages":[
+    {
+      "name":"tour",
+      "version":"4-6",
+      "arch":"noarch",
+      "nevra":"tour-4-6.noarch",
+      "url":"file:\/\/\/home\/manuel\/workspace\/microdnf\/.worktrees\/mnaranjo\/bazel\/e2e\/testdata\/repo\/disagree\/tour-4-6.noarch.rpm",
+      "integrity":"sha256-dq9fKacaZcnZkSB8RifcvTUS3zOESj2Qj6dPHcvDYyE=",
+      "checksum":"76af5f29a71a65c9d991207c4627dcbd3512df33844a3d908fa74f1dcbc36321",
+      "requested":true,
+      "dependencies":[],
+      "dependencies_nevra":[],
+      "transitive_dependencies":[]
+    }
+  ]
+}
