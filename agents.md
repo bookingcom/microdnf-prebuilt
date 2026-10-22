@@ -4,6 +4,16 @@ This document captures critical architectural patterns, protocols, and operation
 
 ---
 
+## 0. Strict Upstream Dependency & Repository Boundary Rule
+
+> [!CAUTION]
+> **Never modify upstream `microdnf` or any upstream dependency directly.**
+> - Changes MUST ONLY be made into `microdnf_prebuilt` (`bookingcom/microdnf-prebuilt`).
+> - Do NOT push branches or open pull requests against `rpm-software-management/microdnf` or any other upstream repository.
+> - If any changes to upstream code (e.g. `microdnf`, `libdnf`, `rpm`, etc.) are necessary, they MUST be implemented as patches or overlays applied within this repository (e.g. under `bazel/3rdparty` or via Bazel patch attributes).
+
+---
+
 ## 1. Tag Immutability & Release Lifecycle
 
 > [!IMPORTANT]
