@@ -81,7 +81,7 @@ bazel_dep(name = "glib", version = "2.84.0.bcr.6", dev_dependency = True)
 bazel_dep(name = "gobject-introspection", version = "1.84.0.bcr.7", dev_dependency = True)
 bazel_dep(name = "libpeas", version = "1.36.0.bcr.12", dev_dependency = True)
 bazel_dep(name = "smartcols", version = "2.41.0.bcr.3", dev_dependency = True)
-bazel_dep(name = "libgpg-error", version = "1.51.0.bcr.4", dev_dependency = True)
+bazel_dep(name = "libgpg-error", version = "1.51.0.bcr.5", dev_dependency = True)
 bazel_dep(name = "libassuan", version = "3.0.2.bcr.8", dev_dependency = True)
 bazel_dep(name = "gpgme", version = "1.24.2.bcr.11", dev_dependency = True)
 bazel_dep(name = "popt", version = "1.19.0.bcr.7", dev_dependency = True)
@@ -92,6 +92,12 @@ bazel_dep(name = "libsolv", version = "0.7.32.bcr.14", dev_dependency = True)
 bazel_dep(name = "librepo", version = "1.19.0.bcr.11", dev_dependency = True)
 bazel_dep(name = "libmodulemd", version = "2.15.0.bcr.15", dev_dependency = True)
 bazel_dep(name = "libdnf", version = "0.74.0.bcr.27", dev_dependency = True)
+
+# Enforce 1.51.0.bcr.5 across transitive 3rdparty dependencies (libassuan, librepo, gpgme)
+single_version_override(
+    module_name = "libgpg-error",
+    version = "1.51.0.bcr.5",
+)
 
 # Bazel Integration Tests
 bazel_dep(name = "rules_bazel_integration_test", version = "0.37.1", dev_dependency = True)
@@ -158,3 +164,4 @@ register_toolchains(
     "//microdnf:toolchain_osx_arm64",
     "//microdnf:toolchain_host",
 )
+

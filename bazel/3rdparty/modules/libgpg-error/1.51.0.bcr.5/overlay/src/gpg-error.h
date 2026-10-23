@@ -1119,7 +1119,28 @@ gpg_err_code_t gpgrt_access (const char *fname, int mode);
  * Lock functions.
  */
 
-#ifdef __aarch64__
+#if defined(__APPLE__)
+
+/* lock-obj-pub.{aarch64,x86_64}-apple-darwin.h: pthread_mutex_t is 64 bytes */
+typedef struct
+{
+  long _vers;
+  union {
+    volatile char _priv[64];
+    long _x_align;
+    long *_xp_align;
+  } u;
+} gpgrt_lock_t;
+
+#define GPGRT_LOCK_INITIALIZER {1,{{167,171,170,50,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0, \
+                                    0,0,0,0,0,0,0,0}}}
+#elif defined(__aarch64__)
 
 typedef struct
 {
