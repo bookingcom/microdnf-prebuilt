@@ -135,7 +135,25 @@ The Renovate configuration (`renovate.json`) is validated with strict RE2 syntax
 
 ---
 
-## 6. Timezone & Communication Guidelines
+## 6. 3rdparty Module Version Bumping & Patching Protocol
+
+When bumping or modifying a 3rdparty module under `bazel/3rdparty/modules/<module>/`:
+
+### Move First, Patch Later (Preserve Git History & Clean Diffs)
+- **Never duplicate version directories**: Do NOT create a new version directory by copying an existing version directory while leaving the old version behind (e.g., copying `1.51.0.bcr.4` to `1.51.0.bcr.5`). Duplicating version directories introduces thousands of redundant lines to pull requests, hides the actual patch diff, and complicates reviews.
+- **Move first (`git mv`)**: Always move or rename the existing directory first (`git mv <old_version> <new_version>`).
+- **Patch later**: Apply only the minimal necessary modifications (e.g., bug fixes, platform conditionals) on top of the moved directory. This ensures git detects the file renames and produces a concise diff showing only the actual changes.
+- **Metadata and source integrity**:
+  - Update `metadata.json` to reflect only the active version(s) in `versions`.
+  - Update `MODULE.bazel` (both in the module root and overlay) with the bumped version.
+  - Recalculate SRI hashes in `source.json` for any modified files.
+- **Transitive dependency resolution**:
+  - If other internal modules in `bazel/3rdparty/modules/` declare dependencies on the previous version, do not keep the old version directory around solely to satisfy them.
+  - Instead, use `single_version_override(module_name = "<module>", version = "<new_version>")` in the root `MODULE.bazel` to enforce the new version across the dependency graph cleanly without cascading edits.
+
+---
+
+## 7. Timezone & Communication Guidelines
 
 - **Timezone**: All timestamps, dates, and build times presented in reports, summaries, or commit notes must be localized to the Amsterdam timezone (`Europe/Amsterdam`, CET/CEST, UTC+1 / UTC+2).
 - **File Links**: Always link to files and code symbols using GitHub-flavored markdown links (`[target](file:///path/to/target)`).
