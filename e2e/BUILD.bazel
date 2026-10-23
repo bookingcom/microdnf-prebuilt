@@ -1,4 +1,4 @@
-load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_tests", "default_test_runner")
+load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_test", "default_test_runner")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//microdnf:defs.bzl", "rpm_archive", "rpm_extract", "rpm_lock")
 
@@ -208,19 +208,71 @@ default_test_runner(
     name = "default_test_runner",
     bazel_cmds = [
         "info",
-        "build //...",
+        # `test //...` builds every target too; a separate build only adds a pass.
         "test //...",
     ],
 )
 
-bazel_integration_tests(
-    name = "downstream_e2e_tests",
-    bazel_versions = ["9.3.0"],
+config_setting(
+    name = "is_linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "is_linux_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "is_darwin_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:macos",
+    ],
+)
+
+config_setting(
+    name = "is_darwin_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:macos",
+    ],
+)
+
+# Bazel 9.3.1 for the host, from the pinned http_file repos in MODULE.bazel.
+alias(
+    name = "bazel_9_3_1",
+    actual = select({
+        ":is_linux_x86_64": "@bazel_9_3_1_linux_x86_64//file",
+        ":is_linux_arm64": "@bazel_9_3_1_linux_arm64//file",
+        ":is_darwin_x86_64": "@bazel_9_3_1_darwin_x86_64//file",
+        ":is_darwin_arm64": "@bazel_9_3_1_darwin_arm64//file",
+    }),
+)
+
+bazel_integration_test(
+    name = "downstream_e2e_tests_bazel_9_3_1",
+    timeout = "long",
+    bazel_binary = ":bazel_9_3_1",
+    # HOME is not inherited, so test-setup.sh points it at TEST_TMPDIR and the child Bazel
+    # never reads the runner's ~/.bazelrc: setup-bazel writes `startup --output_base` there,
+    # and the child would wait forever on the lock of the Bazel running this test.
+    # (startup_options would not help: only the bazelisk wrapper of bazel_binaries reads
+    # BIT_STARTUP_OPTIONS, and bazel_binary here is the plain pinned binary.)
+    env_inherit = [
+        "CC",
+        "SUDO_ASKPASS",
+    ],
     exec_properties = {
         "dockerNetwork": "bridge",
         "network": "bridge",
     },
-    startup_options = "--nohome_rc --nosystem_rc",
     tags = [
         "requires-network",
     ],
@@ -232,6 +284,11 @@ bazel_integration_tests(
         exclude = ["smoke_test/bazel-*/**"],
     ),
     workspace_path = "e2e/smoke_test",
+)
+
+test_suite(
+    name = "downstream_e2e_tests",
+    tests = [":downstream_e2e_tests_bazel_9_3_1"],
 )
 
 sh_test(

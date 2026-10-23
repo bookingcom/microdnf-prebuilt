@@ -589,50 +589,6 @@
         }
       }
     },
-    "@@rules_bazel_integration_test+//:extensions.bzl%bazel_binaries": {
-      "general": {
-        "bzlTransitiveDigest": "XC9nqZ31LIbq8N7cEK+rYa2iXNQLcJ3cyGWw+zPZlc0=",
-        "usagesDigest": "yCtNDiVjcPXP1hMjAageFhzhy1piPzcCKNKI6LOOLZM=",
-        "recordedInputs": [
-          "REPO_MAPPING:rules_bazel_integration_test+,bazel_skylib bazel_skylib+",
-          "REPO_MAPPING:rules_bazel_integration_test+,cgrindel_bazel_starlib cgrindel_bazel_starlib+"
-        ],
-        "generatedRepoSpecs": {
-          "bazel_binaries_bazelisk": {
-            "repoRuleId": "@@rules_bazel_integration_test+//bazel_integration_test/private:bazel_binaries.bzl%bazelisk_binary",
-            "attributes": {
-              "version": "1.26.0"
-            }
-          },
-          "build_bazel_bazel_9_3_0": {
-            "repoRuleId": "@@rules_bazel_integration_test+//bazel_integration_test/private:bazel_binaries.bzl%bazel_binary",
-            "attributes": {
-              "version": "9.3.0",
-              "bazelisk": "@bazel_binaries_bazelisk//:bazelisk"
-            }
-          },
-          "bazel_binaries": {
-            "repoRuleId": "@@rules_bazel_integration_test+//bazel_integration_test/bzlmod:bazel_binaries.bzl%_bazel_binaries_helper",
-            "attributes": {
-              "version_to_repo": {
-                "9.3.0": "build_bazel_bazel_9_3_0"
-              },
-              "current_version": "9.3.0"
-            }
-          }
-        },
-        "moduleExtensionMetadata": {
-          "explicitRootModuleDirectDeps": [],
-          "explicitRootModuleDirectDevDeps": [
-            "bazel_binaries_bazelisk",
-            "build_bazel_bazel_9_3_0",
-            "bazel_binaries"
-          ],
-          "useAllRepos": "NO",
-          "reproducible": false
-        }
-      }
-    },
     "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {
       "general": {
         "bzlTransitiveDigest": "WDuVCwqV73DvcHB5Of+02lhUZgPxr9MqtpvMRyUi0eQ=",

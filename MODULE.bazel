@@ -104,17 +104,44 @@ single_version_override(
 bazel_dep(name = "rules_bazel_integration_test", version = "0.37.1", dev_dependency = True)
 bazel_dep(name = "cgrindel_bazel_starlib", version = "0.28.0", dev_dependency = True)
 
-bazel_binaries = use_extension(
-    "@rules_bazel_integration_test//:extensions.bzl",
-    "bazel_binaries",
+# Bazel for the downstream integration test, fetched (and cached) as a repo instead of
+# bazelisk downloading it inside every test run.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "bazel_9_3_1_linux_x86_64",
     dev_dependency = True,
+    downloaded_file_path = "bazel",
+    executable = True,
+    sha256 = "7f775b54bbec487efaf0f49ccda1d2ed02cd34f582edfdd6aeeec76e39ef585c",
+    url = "https://releases.bazel.build/9.3.1/release/bazel-9.3.1-linux-x86_64",
 )
-bazel_binaries.download(version = "9.3.0")
-use_repo(
-    bazel_binaries,
-    "bazel_binaries",
-    "bazel_binaries_bazelisk",
-    "build_bazel_bazel_9_3_0",
+
+http_file(
+    name = "bazel_9_3_1_linux_arm64",
+    dev_dependency = True,
+    downloaded_file_path = "bazel",
+    executable = True,
+    sha256 = "10ba9cb76d4ee748d274dcc2981992bb12b74a203dc41a9c2eceeb8f29359366",
+    url = "https://releases.bazel.build/9.3.1/release/bazel-9.3.1-linux-arm64",
+)
+
+http_file(
+    name = "bazel_9_3_1_darwin_x86_64",
+    dev_dependency = True,
+    downloaded_file_path = "bazel",
+    executable = True,
+    sha256 = "01eb4368a9c331391448bc1f11b1bec4e57793a0cee0581579ee786cd26baf37",
+    url = "https://releases.bazel.build/9.3.1/release/bazel-9.3.1-darwin-x86_64",
+)
+
+http_file(
+    name = "bazel_9_3_1_darwin_arm64",
+    dev_dependency = True,
+    downloaded_file_path = "bazel",
+    executable = True,
+    sha256 = "19c4958626e0e3a564a61c2e85eeaab97b550a30632b82341191aa61ed0ccc1b",
+    url = "https://releases.bazel.build/9.3.1/release/bazel-9.3.1-darwin-arm64",
 )
 
 # Test RPM repository for e2e testing
