@@ -697,6 +697,13 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
           return FALSE;
         }
 
+      /* Only @System packages can be obsoleted, and a lockfile only adds packages */
+      g_autoptr(GPtrArray) obsoleted = hy_goal_list_obsoleted (goal, NULL);
+      for (guint i = 0; obsoleted && i < obsoleted->len; ++i)
+        g_printerr ("warning: the solve obsoletes %s from a layer below; a lockfile cannot remove it, "
+                    "so the image keeps it\n",
+                    dnf_package_get_nevra (g_ptr_array_index (obsoleted, i)));
+
       /* Include target packages in all_pkgs ONLY if new or integrity changed */
       for (guint i = 0; i < target_pkgs->len; ++i)
         {

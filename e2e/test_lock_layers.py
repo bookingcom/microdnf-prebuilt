@@ -119,3 +119,8 @@ rc, nevras, err = lock(
     [locked("tour", "1"), locked("tour", "2")],
     ["app", "tour"])
 check(CASE, (rc, nevras), (0, ["app-1-1.noarch"]), err)
+
+CASE = "obsoleting a package below warns that the image keeps it"
+rc, nevras, err = lock(CASE, [{"name": "old"}, {"name": "new", "obsoletes": ["old"]}], [locked("old")], ["new"])
+check(CASE, (rc, nevras, "the solve obsoletes old-1-1.noarch from a layer below" in err),
+      (0, ["new-1-1.noarch"], True), err)
