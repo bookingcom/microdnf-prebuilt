@@ -127,3 +127,13 @@ CASE = "obsoleting a package below records it and warns"
 rc, nevras, err, obsoleted = lock(CASE, [{"name": "old"}, {"name": "new", "obsoletes": ["old"]}], [locked("old")], ["new"])
 check(CASE, (rc, nevras, obsoleted, "the solve obsoletes old-1-1.noarch from a layer below" in err),
       (0, ["new-1-1.noarch"], [{"name": "old", "version": "1-1", "arch": "noarch", "nevra": "old-1-1.noarch"}], True), err)
+
+for CASE, entry, message in [
+        ("a lockfile entry without a name is an error",
+         {"version": "1-1", "arch": "noarch", "nevra": "tour-1-1.noarch"}, "package 0 has no name"),
+        ("a lockfile entry with a non-string name is an error",
+         {**locked("tour"), "name": 123}, "package 0 has a non-string name"),
+        ("a lockfile entry with a non-string nevra is an error",
+         {**locked("tour"), "nevra": 5}, "package 0 has a non-string nevra")]:
+    rc, nevras, err, obsoleted = lock(CASE, [{"name": "tour"}, {"name": "app", "requires": ["tour"]}], [entry], ["app"])
+    check(CASE, (rc != 0, message in err), (True, True), err)

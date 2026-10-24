@@ -122,6 +122,24 @@ compute_package_checksum (DnfPackage *pkg)
   return g_string_free (hex, FALSE);
 }
 
+/* Copies member @key of package @i of lockfile @path into *@out: a string, or
+ * NULL when the member is absent or null. */
+static gboolean
+lock_string_member (const gchar *path, int i, struct json_object *obj, const char *key, gchar **out, GError **error)
+{
+  struct json_object *value = NULL;
+  if (!json_object_object_get_ex (obj, key, &value) || json_object_is_type (value, json_type_null))
+    return TRUE;
+  if (!json_object_is_type (value, json_type_string))
+    {
+      g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                   "Lockfile '%s': package %d has a non-string %s", path, i, key);
+      return FALSE;
+    }
+  *out = g_strdup (json_object_get_string (value));
+  return TRUE;
+}
+
 static gboolean
 parse_and_merge_lockfile (const gchar *path,
                           const gchar **installonly,
@@ -166,41 +184,35 @@ parse_and_merge_lockfile (const gchar *path,
         {
           struct json_object *p_obj = json_object_array_get_idx (pkgs_arr, i);
           if (!p_obj || !json_object_is_type (p_obj, json_type_object))
-            continue;
-
-          struct json_object *name_obj = NULL;
-          if (!json_object_object_get_ex (p_obj, "name", &name_obj))
-            continue;
-          const char *name = json_object_get_string (name_obj);
-          if (!name || !*name)
-            continue;
+            {
+              g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                           "Lockfile '%s': package %d is not an object", path, i);
+              json_object_put (root);
+              return FALSE;
+            }
 
           InstalledPkg *pkg = g_new0 (InstalledPkg, 1);
-          pkg->name = g_strdup (name);
-
-          struct json_object *v_obj = NULL;
-          if (json_object_object_get_ex (p_obj, "version", &v_obj))
-            pkg->version = g_strdup (json_object_get_string (v_obj));
-
-          struct json_object *a_obj = NULL;
-          if (json_object_object_get_ex (p_obj, "arch", &a_obj))
-            pkg->arch = g_strdup (json_object_get_string (a_obj));
-
-          struct json_object *nevra_obj = NULL;
-          if (json_object_object_get_ex (p_obj, "nevra", &nevra_obj))
-            pkg->nevra = g_strdup (json_object_get_string (nevra_obj));
-
-          struct json_object *url_obj = NULL;
-          if (json_object_object_get_ex (p_obj, "url", &url_obj))
-            pkg->url = g_strdup (json_object_get_string (url_obj));
-
-          struct json_object *integ_obj = NULL;
-          if (json_object_object_get_ex (p_obj, "integrity", &integ_obj))
-            pkg->integrity = g_strdup (json_object_get_string (integ_obj));
-
-          struct json_object *chk_obj = NULL;
-          if (json_object_object_get_ex (p_obj, "checksum", &chk_obj))
-            pkg->checksum = g_strdup (json_object_get_string (chk_obj));
+          if (!lock_string_member (path, i, p_obj, "name", &pkg->name, error) ||
+              !lock_string_member (path, i, p_obj, "version", &pkg->version, error) ||
+              !lock_string_member (path, i, p_obj, "arch", &pkg->arch, error) ||
+              !lock_string_member (path, i, p_obj, "nevra", &pkg->nevra, error) ||
+              !lock_string_member (path, i, p_obj, "url", &pkg->url, error) ||
+              !lock_string_member (path, i, p_obj, "integrity", &pkg->integrity, error) ||
+              !lock_string_member (path, i, p_obj, "checksum", &pkg->checksum, error))
+            {
+              installed_pkg_free (pkg);
+              json_object_put (root);
+              return FALSE;
+            }
+          if (!pkg->name || !*pkg->name)
+            {
+              g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                           "Lockfile '%s': package %d has no name", path, i);
+              installed_pkg_free (pkg);
+              json_object_put (root);
+              return FALSE;
+            }
+          const char *name = pkg->name;
 
           struct json_object *req_obj = NULL;
           if (json_object_object_get_ex (p_obj, "requested", &req_obj))
