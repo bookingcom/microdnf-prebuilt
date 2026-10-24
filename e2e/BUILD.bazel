@@ -230,3 +230,16 @@ sh_test(
         "//e2e/testdata:test_repo_files",
     ],
 )
+
+sh_test(
+    name = "lock_layers_test",
+    srcs = ["test_lock_layers.sh"],
+    args = [
+        "$(rootpath :test_lock_layers.py)",
+        "$(rootpath //:dnf_lock)",
+    ],
+    data = [
+        ":test_lock_layers.py",
+        "//:dnf_lock",
+    ],
+)

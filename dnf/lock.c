@@ -52,6 +52,25 @@ installed_pkg_free (InstalledPkg *pkg)
   g_free (pkg);
 }
 
+/* Identifies a package of a layer below: name.arch, as several arches of a
+ * name can be installed at once, or the NEVRA for an installonly package,
+ * whose versions are installed side by side. */
+static gchar *
+installed_key (const char *name, const char *arch, const char *nevra, const gchar **installonly)
+{
+  if (nevra && installonly && g_strv_contains (installonly, name))
+    return g_strdup (nevra);
+  return g_strdup_printf ("%s.%s", name, arch ? arch : "");
+}
+
+static InstalledPkg *
+lookup_installed (GHashTable *installed_by_key, DnfPackage *pkg, const gchar **installonly)
+{
+  g_autofree gchar *key = installed_key (dnf_package_get_name (pkg), dnf_package_get_arch (pkg),
+                                         dnf_package_get_nevra (pkg), installonly);
+  return g_hash_table_lookup (installed_by_key, key);
+}
+
 static gchar *
 compute_package_integrity (DnfPackage *pkg)
 {
@@ -105,6 +124,8 @@ compute_package_checksum (DnfPackage *pkg)
 
 static gboolean
 parse_and_merge_lockfile (const gchar *path,
+                          const gchar **installonly,
+                          GHashTable *installed_by_key,
                           GHashTable *installed_pkgs,
                           GPtrArray *installed_order,
                           gchar **out_arch,
@@ -230,13 +251,14 @@ parse_and_merge_lockfile (const gchar *path,
                 }
             }
 
-          /* If name is already in installed_pkgs, replace it (later layer overrides earlier layer) */
-          InstalledPkg *old_pkg = g_hash_table_lookup (installed_pkgs, name);
+          /* A later layer overrides an earlier one's package with the same key */
+          gchar *key = installed_key (pkg->name, pkg->arch, pkg->nevra, installonly);
+          InstalledPkg *old_pkg = g_hash_table_lookup (installed_by_key, key);
           if (old_pkg)
-            {
-              g_ptr_array_remove (installed_order, old_pkg);
-            }
+            g_ptr_array_remove (installed_order, old_pkg);
+          /* Repoint the name before replace frees old_pkg, which it may name */
           g_hash_table_replace (installed_pkgs, g_strdup (name), pkg);
+          g_hash_table_replace (installed_by_key, key, pkg);
           g_ptr_array_add (installed_order, pkg);
         }
     }
@@ -477,14 +499,17 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
     }
 
   /* Parse and merge ordered lockfiles from previous layers */
-  g_autoptr(GHashTable) installed_pkgs = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, (GDestroyNotify)installed_pkg_free);
+  const gchar **installonly = dnf_context_get_installonly_pkgs (ctx);
+  /* Owns the packages of the layers below; installed_pkgs maps a name to its latest one */
+  g_autoptr(GHashTable) installed_by_key = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, (GDestroyNotify)installed_pkg_free);
+  g_autoptr(GHashTable) installed_pkgs = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   g_autoptr(GPtrArray) installed_order = g_ptr_array_new ();
   g_autofree gchar *inherited_arch = NULL;
 
   for (guint i = 0; i < ordered_lockfiles->len; ++i)
     {
       const char *lf_path = g_ptr_array_index (ordered_lockfiles, i);
-      if (!parse_and_merge_lockfile (lf_path, installed_pkgs, installed_order, &inherited_arch, error))
+      if (!parse_and_merge_lockfile (lf_path, installonly, installed_by_key, installed_pkgs, installed_order, &inherited_arch, error))
         return FALSE;
     }
 
@@ -676,8 +701,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
       for (guint i = 0; i < target_pkgs->len; ++i)
         {
           DnfPackage *pkg = g_ptr_array_index (target_pkgs, i);
-          const char *name = dnf_package_get_name (pkg);
-          InstalledPkg *inst = name ? g_hash_table_lookup (installed_pkgs, name) : NULL;
+          InstalledPkg *inst = lookup_installed (installed_by_key, pkg, installonly);
           if (!inst)
             {
               g_ptr_array_add (all_pkgs, g_object_ref (pkg));
@@ -696,8 +720,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
           for (guint i = 0; i < installs->len; ++i)
             {
               DnfPackage *pkg = g_ptr_array_index (installs, i);
-              const char *name = dnf_package_get_name (pkg);
-              InstalledPkg *inst = name ? g_hash_table_lookup (installed_pkgs, name) : NULL;
+              InstalledPkg *inst = lookup_installed (installed_by_key, pkg, installonly);
               if (!inst)
                 {
                   g_ptr_array_add (all_pkgs, g_object_ref (pkg));
