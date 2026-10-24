@@ -166,6 +166,8 @@ main (int argc, char *argv[])
             { "output", 'o', 0, G_OPTION_ARG_NONE, NULL, "Output JSON lockfile path (defaults to stdout)", "FILE" },
             { "archlist", '\0', 0, G_OPTION_ARG_NONE, NULL, "Limit query to packages of given architectures", "ARCH,..." },
             { "exclude", 'x', 0, G_OPTION_ARG_NONE, NULL, "Exclude package and its dependencies unless directly requested", "PKG,..." },
+            { "lockfile", 'l', 0, G_OPTION_ARG_NONE, NULL, "Ordered list of lockfiles from previous layers", "FILE" },
+            { "lock-file", 0, 0, G_OPTION_ARG_NONE, NULL, "Ordered list of lockfiles from previous layers", "FILE" },
             { NULL }
           };
           g_option_context_add_main_entries (help_ctx, entries, NULL);

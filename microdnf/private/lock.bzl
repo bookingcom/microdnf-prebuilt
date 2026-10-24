@@ -65,11 +65,14 @@ mkdir -p "${CACHE_DIR}"
     for exc in ctx.attr.exclude:
         args.add("--exclude=" + exc)
 
+    for lf in ctx.files.lock_files:
+        args.add("--lockfile=" + lf.path)
+
     for pkg in ctx.attr.packages:
         args.add(pkg)
 
     inputs = depset(
-        direct = [repo_conf] + repo_files,
+        direct = [repo_conf] + repo_files + ctx.files.lock_files,
         transitive = [],
     )
 
@@ -117,6 +120,7 @@ mkdir -p "${CACHE_DIR}"
   --archlist="%s" \\
   --releasever="%s" \\
   %s \\
+  %s \\
   %s
 
 mkdir -p "$(dirname "${DEST}")"
@@ -131,6 +135,7 @@ echo "Lockfile updated at: ${DEST}"
         arch_str,
         ctx.attr.releasever,
         " ".join(["--exclude='%s'" % e for e in ctx.attr.exclude]),
+        " ".join(["--lockfile='%s'" % lf.short_path for lf in ctx.files.lock_files]),
         " ".join(["'%s'" % p for p in ctx.attr.packages]),
     )
 
@@ -140,7 +145,7 @@ echo "Lockfile updated at: ${DEST}"
         is_executable = True,
     )
 
-    runfiles = ctx.runfiles(files = [repo_conf, lock_tool] + repo_files)
+    runfiles = ctx.runfiles(files = [repo_conf, lock_tool] + repo_files + ctx.files.lock_files)
 
     return [
         DefaultInfo(
@@ -167,6 +172,11 @@ rpm_lock = rule(
         "exclude": attr.string_list(
             default = [],
             doc = "Optional packages to exclude and prune from the dependency tree.",
+        ),
+        "lock_files": attr.label_list(
+            default = [],
+            allow_files = [".json"],
+            doc = "Ordered list of lock files from previous layers.",
         ),
         "lock_tool": attr.label(
             default = Label("//:dnf_lock"),

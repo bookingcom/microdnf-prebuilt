@@ -12,18 +12,236 @@
 #include <glib.h>
 #include <json-c/json.h>
 #include <librepo/librepo.h>
+#include <solv/pool.h>
+#include <solv/repo.h>
+#include <solv/solvable.h>
+
+typedef struct {
+  gchar *name;
+  gchar *version;
+  gchar *arch;
+  gchar *nevra;
+  gchar *url;
+  gchar *integrity;
+  gchar *checksum;
+  gboolean requested;
+  GPtrArray *dependencies;          /* gchar* */
+  GPtrArray *dependencies_nevra;    /* gchar* */
+  GPtrArray *transitive_deps;       /* gchar* */
+} InstalledPkg;
 
 static void
-ptr_array_extend_and_steal (GPtrArray *array_to_extend, GPtrArray *array)
+installed_pkg_free (InstalledPkg *pkg)
 {
-  guint origin_len = array_to_extend->len;
-  g_ptr_array_set_size (array_to_extend, origin_len + array->len);
-  for (guint i = 0; i < array->len; ++i)
+  if (!pkg)
+    return;
+  g_free (pkg->name);
+  g_free (pkg->version);
+  g_free (pkg->arch);
+  g_free (pkg->nevra);
+  g_free (pkg->url);
+  g_free (pkg->integrity);
+  g_free (pkg->checksum);
+  if (pkg->dependencies)
+    g_ptr_array_unref (pkg->dependencies);
+  if (pkg->dependencies_nevra)
+    g_ptr_array_unref (pkg->dependencies_nevra);
+  if (pkg->transitive_deps)
+    g_ptr_array_unref (pkg->transitive_deps);
+  g_free (pkg);
+}
+
+static gchar *
+compute_package_integrity (DnfPackage *pkg)
+{
+  int chk_type = 0;
+  const unsigned char *chk_bytes = dnf_package_get_chksum (pkg, &chk_type);
+  if (!chk_bytes)
+    return NULL;
+
+  int chk_len = 32;
+  const char *algo_name = "sha256";
+  switch (chk_type)
     {
-      g_ptr_array_index (array_to_extend, origin_len + i) = g_ptr_array_index (array, i);
+    case G_CHECKSUM_SHA256: chk_len = 32; algo_name = "sha256"; break;
+    case G_CHECKSUM_SHA512: chk_len = 64; algo_name = "sha512"; break;
+    case G_CHECKSUM_SHA384: chk_len = 48; algo_name = "sha384"; break;
+    case G_CHECKSUM_SHA1:   chk_len = 20; algo_name = "sha1"; break;
+    case G_CHECKSUM_MD5:    chk_len = 16; algo_name = "md5"; break;
+    default: chk_len = 32; algo_name = "sha256"; break;
     }
-  array->len = 0;
-  g_ptr_array_unref (array);
+
+  gchar *b64 = g_base64_encode (chk_bytes, chk_len);
+  gchar *integrity = g_strdup_printf ("%s-%s", algo_name, b64);
+  g_free (b64);
+  return integrity;
+}
+
+static gchar *
+compute_package_checksum (DnfPackage *pkg)
+{
+  int chk_type = 0;
+  const unsigned char *chk_bytes = dnf_package_get_chksum (pkg, &chk_type);
+  if (!chk_bytes)
+    return NULL;
+
+  int chk_len = 32;
+  switch (chk_type)
+    {
+    case G_CHECKSUM_SHA256: chk_len = 32; break;
+    case G_CHECKSUM_SHA512: chk_len = 64; break;
+    case G_CHECKSUM_SHA384: chk_len = 48; break;
+    case G_CHECKSUM_SHA1:   chk_len = 20; break;
+    case G_CHECKSUM_MD5:    chk_len = 16; break;
+    default: chk_len = 32; break;
+    }
+
+  GString *hex = g_string_sized_new (chk_len * 2);
+  for (int b = 0; b < chk_len; ++b)
+    g_string_append_printf (hex, "%02x", chk_bytes[b]);
+  return g_string_free (hex, FALSE);
+}
+
+static gboolean
+parse_and_merge_lockfile (const gchar *path,
+                          GHashTable *installed_pkgs,
+                          GPtrArray *installed_order,
+                          gchar **out_arch,
+                          GError **error)
+{
+  g_autofree gchar *content = NULL;
+  gsize length = 0;
+  if (!g_file_get_contents (path, &content, &length, error))
+    return FALSE;
+
+  struct json_tokener *tok = json_tokener_new ();
+  struct json_object *root = json_tokener_parse_ex (tok, content, length);
+  enum json_tokener_error jerr = json_tokener_get_error (tok);
+  json_tokener_free (tok);
+
+  if (jerr != json_tokener_success || !root || !json_object_is_type (root, json_type_object))
+    {
+      if (root)
+        json_object_put (root);
+      g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                   "Failed to parse lockfile JSON at '%s'", path);
+      return FALSE;
+    }
+
+  struct json_object *arch_obj = NULL;
+  if (json_object_object_get_ex (root, "arch", &arch_obj))
+    {
+      if (out_arch && *out_arch == NULL)
+        *out_arch = g_strdup (json_object_get_string (arch_obj));
+    }
+
+  struct json_object *pkgs_arr = NULL;
+  if (json_object_object_get_ex (root, "packages", &pkgs_arr) &&
+      json_object_is_type (pkgs_arr, json_type_array))
+    {
+      int n_pkgs = json_object_array_length (pkgs_arr);
+      for (int i = 0; i < n_pkgs; ++i)
+        {
+          struct json_object *p_obj = json_object_array_get_idx (pkgs_arr, i);
+          if (!p_obj || !json_object_is_type (p_obj, json_type_object))
+            continue;
+
+          struct json_object *name_obj = NULL;
+          if (!json_object_object_get_ex (p_obj, "name", &name_obj))
+            continue;
+          const char *name = json_object_get_string (name_obj);
+          if (!name || !*name)
+            continue;
+
+          InstalledPkg *pkg = g_new0 (InstalledPkg, 1);
+          pkg->name = g_strdup (name);
+
+          struct json_object *v_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "version", &v_obj))
+            pkg->version = g_strdup (json_object_get_string (v_obj));
+
+          struct json_object *a_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "arch", &a_obj))
+            pkg->arch = g_strdup (json_object_get_string (a_obj));
+
+          struct json_object *nevra_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "nevra", &nevra_obj))
+            pkg->nevra = g_strdup (json_object_get_string (nevra_obj));
+
+          struct json_object *url_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "url", &url_obj))
+            pkg->url = g_strdup (json_object_get_string (url_obj));
+
+          struct json_object *integ_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "integrity", &integ_obj))
+            pkg->integrity = g_strdup (json_object_get_string (integ_obj));
+
+          struct json_object *chk_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "checksum", &chk_obj))
+            pkg->checksum = g_strdup (json_object_get_string (chk_obj));
+
+          struct json_object *req_obj = NULL;
+          if (json_object_object_get_ex (p_obj, "requested", &req_obj))
+            pkg->requested = json_object_get_boolean (req_obj);
+
+          /* Dependencies */
+          struct json_object *deps_arr = NULL;
+          if (json_object_object_get_ex (p_obj, "dependencies", &deps_arr) &&
+              json_object_is_type (deps_arr, json_type_array))
+            {
+              pkg->dependencies = g_ptr_array_new_with_free_func (g_free);
+              int nd = json_object_array_length (deps_arr);
+              for (int d = 0; d < nd; ++d)
+                {
+                  struct json_object *d_item = json_object_array_get_idx (deps_arr, d);
+                  if (d_item)
+                    g_ptr_array_add (pkg->dependencies, g_strdup (json_object_get_string (d_item)));
+                }
+            }
+
+          /* Dependencies NEVRA */
+          struct json_object *deps_nevra_arr = NULL;
+          if (json_object_object_get_ex (p_obj, "dependencies_nevra", &deps_nevra_arr) &&
+              json_object_is_type (deps_nevra_arr, json_type_array))
+            {
+              pkg->dependencies_nevra = g_ptr_array_new_with_free_func (g_free);
+              int nd = json_object_array_length (deps_nevra_arr);
+              for (int d = 0; d < nd; ++d)
+                {
+                  struct json_object *d_item = json_object_array_get_idx (deps_nevra_arr, d);
+                  if (d_item)
+                    g_ptr_array_add (pkg->dependencies_nevra, g_strdup (json_object_get_string (d_item)));
+                }
+            }
+
+          /* Transitive dependencies */
+          struct json_object *trans_arr = NULL;
+          if (json_object_object_get_ex (p_obj, "transitive_dependencies", &trans_arr) &&
+              json_object_is_type (trans_arr, json_type_array))
+            {
+              pkg->transitive_deps = g_ptr_array_new_with_free_func (g_free);
+              int nd = json_object_array_length (trans_arr);
+              for (int d = 0; d < nd; ++d)
+                {
+                  struct json_object *d_item = json_object_array_get_idx (trans_arr, d);
+                  if (d_item)
+                    g_ptr_array_add (pkg->transitive_deps, g_strdup (json_object_get_string (d_item)));
+                }
+            }
+
+          /* If name is already in installed_pkgs, replace it (later layer overrides earlier layer) */
+          InstalledPkg *old_pkg = g_hash_table_lookup (installed_pkgs, name);
+          if (old_pkg)
+            {
+              g_ptr_array_remove (installed_order, old_pkg);
+            }
+          g_hash_table_replace (installed_pkgs, g_strdup (name), pkg);
+          g_ptr_array_add (installed_order, pkg);
+        }
+    }
+
+  json_object_put (root);
+  return TRUE;
 }
 
 static gint
@@ -179,65 +397,19 @@ resolve_package_url (DnfPackage *pkg, DnfContext *ctx)
       full_base = g_strdup (pkg_base);
     }
 
-  gchar *res = NULL;
   if (full_base)
     {
       gboolean base_has_slash = g_str_has_suffix (full_base, "/");
       gboolean loc_has_slash = (loc[0] == '/');
       if (base_has_slash && loc_has_slash)
-        res = g_strdup_printf ("%s%s", full_base, loc + 1);
+        return g_strdup_printf ("%s%s", full_base, loc + 1);
       else if (!base_has_slash && !loc_has_slash)
-        res = g_strdup_printf ("%s/%s", full_base, loc);
+        return g_strdup_printf ("%s/%s", full_base, loc);
       else
-        res = g_strdup_printf ("%s%s", full_base, loc);
-    }
-  else
-    {
-      res = g_strdup (loc);
+        return g_strdup_printf ("%s%s", full_base, loc);
     }
 
-  if (g_str_has_prefix (res, "file://"))
-    {
-      const char *path = res + 7;
-      const char *ws = g_getenv ("BUILD_WORKSPACE_DIRECTORY");
-      if (!ws || !*ws)
-        ws = g_getenv ("PWD");
-
-      if (ws && *ws && g_str_has_prefix (path, ws))
-        {
-          const char *rel = path + strlen (ws);
-          while (*rel == '/')
-            rel++;
-          g_free (res);
-          return g_strdup (rel);
-        }
-
-      const char *execroot_marker = strstr (path, "/execroot/");
-      if (execroot_marker)
-        {
-          const char *after_root = strchr (execroot_marker + 10, '/');
-          if (after_root)
-            {
-              while (*after_root == '/')
-                after_root++;
-              g_free (res);
-              return g_strdup (after_root);
-            }
-        }
-
-      const char *home = g_get_home_dir ();
-      if (home && *home && g_str_has_prefix (path, home))
-        {
-          const char *e2e = strstr (path, "/e2e/");
-          if (e2e)
-            {
-              g_free (res);
-              return g_strdup (e2e + 1);
-            }
-        }
-    }
-
-  return res;
+  return g_strdup (loc);
 }
 
 gboolean
@@ -246,12 +418,15 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   g_autofree gchar *opt_output = NULL;
   g_autofree gchar *opt_archlist = NULL;
   g_auto(GStrv) opt_exclude = NULL;
+  g_auto(GStrv) opt_lockfiles = NULL;
   g_auto(GStrv) opt_packages = NULL;
 
   const GOptionEntry entries[] = {
     { "output", 'o', 0, G_OPTION_ARG_STRING, &opt_output, "Output JSON lockfile path (defaults to stdout)", "FILE" },
     { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, "Limit query to packages of given architectures", "ARCH,..." },
     { "exclude", 'x', 0, G_OPTION_ARG_STRING_ARRAY, &opt_exclude, "Exclude package and its unneeded dependencies unless directly requested", "PKG,..." },
+    { "lockfile", 'l', 0, G_OPTION_ARG_FILENAME_ARRAY, &opt_lockfiles, "Ordered list of lockfiles from previous layers", "FILE" },
+    { "lock-file", 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &opt_lockfiles, "Ordered list of lockfiles from previous layers", "FILE" },
     { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_packages, "Target packages", "PACKAGE..." },
     { NULL }
   };
@@ -260,52 +435,294 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   if (!g_option_context_parse (opt_ctx, &argc, &argv, error))
     return FALSE;
 
-  if (!opt_packages || !opt_packages[0])
+  /* Collect ordered list of lockfile paths from options and remaining arguments */
+  g_autoptr(GPtrArray) ordered_lockfiles = g_ptr_array_new_with_free_func (g_free);
+  if (opt_lockfiles)
+    {
+      for (char **lf = opt_lockfiles; *lf; ++lf)
+        {
+          g_auto(GStrv) tokens = g_strsplit_set (*lf, ",", -1);
+          for (char **tok = tokens; *tok; ++tok)
+            {
+              g_strstrip (*tok);
+              if (**tok)
+                g_ptr_array_add (ordered_lockfiles, g_strdup (*tok));
+            }
+        }
+    }
+
+  g_autoptr(GPtrArray) actual_target_pkgs = g_ptr_array_new_with_free_func (g_free);
+  if (opt_packages)
+    {
+      for (char **pkg_arg = opt_packages; *pkg_arg; ++pkg_arg)
+        {
+          if ((g_str_has_suffix (*pkg_arg, ".json") || g_str_has_suffix (*pkg_arg, ".lock.json")) &&
+              g_file_test (*pkg_arg, G_FILE_TEST_IS_REGULAR))
+            {
+              g_ptr_array_add (ordered_lockfiles, g_strdup (*pkg_arg));
+            }
+          else
+            {
+              g_ptr_array_add (actual_target_pkgs, g_strdup (*pkg_arg));
+            }
+        }
+    }
+
+  if (actual_target_pkgs->len == 0)
     {
       g_set_error_literal (error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
                            "No packages specified for lockfile generation");
       return FALSE;
     }
 
+  /* Parse and merge ordered lockfiles from previous layers */
+  g_autoptr(GHashTable) installed_pkgs = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, (GDestroyNotify)installed_pkg_free);
+  g_autoptr(GPtrArray) installed_order = g_ptr_array_new ();
+  g_autofree gchar *inherited_arch = NULL;
+
+  for (guint i = 0; i < ordered_lockfiles->len; ++i)
+    {
+      const char *lf_path = g_ptr_array_index (ordered_lockfiles, i);
+      if (!parse_and_merge_lockfile (lf_path, installed_pkgs, installed_order, &inherited_arch, error))
+        return FALSE;
+    }
+
+  if (!opt_archlist && inherited_arch)
+    opt_archlist = g_strdup (inherited_arch);
+
+  /* Set of directly requested packages */
+  g_autoptr(GHashTable) directly_requested = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  for (guint i = 0; i < actual_target_pkgs->len; ++i)
+    {
+      const char *pname = g_ptr_array_index (actual_target_pkgs, i);
+      g_hash_table_add (directly_requested, g_strdup (pname));
+    }
+
   DnfState *state = dnf_context_get_state (ctx);
-  /* For generating complete lockfiles, resolve against repos without skipping due to installed RPMs */
   if (!dnf_context_setup_sack_with_flags (ctx, state, DNF_CONTEXT_SETUP_SACK_FLAG_SKIP_RPMDB, error))
     return FALSE;
 
   DnfSack *sack = dnf_context_get_sack (ctx);
-  hy_autoquery HyQuery query = get_packages_query (ctx, opt_packages, opt_archlist);
+  Pool *pool = dnf_sack_get_pool (sack);
+
+  /* Create and populate system repo representing packages installed in previous layers */
+  if (installed_order->len > 0)
+    {
+      Repo *sys_repo = repo_create (pool, HY_SYSTEM_REPO_NAME);
+      HyRepo hrepo = hy_repo_create (HY_SYSTEM_REPO_NAME);
+      sys_repo->appdata = hrepo;
+
+      for (guint i = 0; i < installed_order->len; ++i)
+        {
+          InstalledPkg *inst = g_ptr_array_index (installed_order, i);
+
+          /* Check if this package exists in remote repositories */
+          HyQuery pq = hy_query_create (sack);
+          hy_query_filter (pq, HY_PKG_REPONAME, HY_NEQ, HY_SYSTEM_REPO_NAME);
+          hy_query_filter (pq, HY_PKG_NAME, HY_EQ, inst->name);
+          if (inst->nevra)
+            hy_query_filter (pq, HY_PKG_NEVRA, HY_EQ, inst->nevra);
+          else if (inst->version)
+            hy_query_filter (pq, HY_PKG_EVR, HY_EQ, inst->version);
+          if (opt_archlist)
+            {
+              g_auto(GStrv) archs_array = g_strsplit_set (opt_archlist, ", ", -1);
+              hy_query_filter_in (pq, HY_PKG_ARCH, HY_EQ, (const char **)archs_array);
+            }
+          g_autoptr(GPtrArray) cand_pkgs = hy_query_run (pq);
+
+          if (cand_pkgs && cand_pkgs->len > 0)
+            {
+              DnfPackage *cand = g_ptr_array_index (cand_pkgs, 0);
+              g_autofree gchar *cand_integrity = compute_package_integrity (cand);
+              if (inst->integrity && cand_integrity && g_strcmp0 (inst->integrity, cand_integrity) != 0)
+                {
+                  /* RPM integrity changed! Do not mark as installed so solver fetches updated package */
+                  continue;
+                }
+
+              /* Duplicate solvable to sys_repo */
+              Id cand_id = dnf_package_get_id (cand);
+              Solvable *s_cand = pool_id2solvable (pool, cand_id);
+
+              Id new_id = repo_add_solvable (sys_repo);
+              Solvable *s_new = pool_id2solvable (pool, new_id);
+              s_new->name = s_cand->name;
+              s_new->arch = s_cand->arch;
+              s_new->evr = s_cand->evr;
+              s_new->vendor = s_cand->vendor;
+
+              if (s_cand->provides)
+                {
+                  Id *dp = s_cand->repo->idarraydata + s_cand->provides;
+                  while (*dp)
+                    {
+                      repo_add_deparray (sys_repo, new_id, SOLVABLE_PROVIDES, *dp, 0);
+                      dp++;
+                    }
+                }
+              if (s_cand->requires)
+                {
+                  Id *dp = s_cand->repo->idarraydata + s_cand->requires;
+                  while (*dp)
+                    {
+                      repo_add_deparray (sys_repo, new_id, SOLVABLE_REQUIRES, *dp, 0);
+                      dp++;
+                    }
+                }
+              if (s_cand->conflicts)
+                {
+                  Id *dp = s_cand->repo->idarraydata + s_cand->conflicts;
+                  while (*dp)
+                    {
+                      repo_add_deparray (sys_repo, new_id, SOLVABLE_CONFLICTS, *dp, 0);
+                      dp++;
+                    }
+                }
+              if (s_cand->obsoletes)
+                {
+                  Id *dp = s_cand->repo->idarraydata + s_cand->obsoletes;
+                  while (*dp)
+                    {
+                      repo_add_deparray (sys_repo, new_id, SOLVABLE_OBSOLETES, *dp, 0);
+                      dp++;
+                    }
+                }
+            }
+          else
+            {
+              /* Synthetic solvable from lockfile */
+              Id new_id = repo_add_solvable (sys_repo);
+              Solvable *s_new = pool_id2solvable (pool, new_id);
+              s_new->name = pool_str2id (pool, inst->name, 1);
+              s_new->arch = pool_str2id (pool, inst->arch ? inst->arch : "noarch", 1);
+              s_new->evr = pool_str2id (pool, inst->version ? inst->version : "0", 1);
+              s_new->vendor = 0;
+
+              Id self_dep = pool_rel2id (pool, s_new->name, s_new->evr, REL_EQ, 1);
+              repo_add_deparray (sys_repo, new_id, SOLVABLE_PROVIDES, self_dep, 0);
+              repo_add_deparray (sys_repo, new_id, SOLVABLE_PROVIDES, s_new->name, 0);
+
+              if (inst->dependencies)
+                {
+                  for (guint d = 0; d < inst->dependencies->len; ++d)
+                    {
+                      const char *dn = g_ptr_array_index (inst->dependencies, d);
+                      repo_add_deparray (sys_repo, new_id, SOLVABLE_REQUIRES, pool_str2id (pool, dn, 1), 0);
+                    }
+                }
+            }
+        }
+
+      repo_internalize (sys_repo);
+      pool_set_installed (pool, sys_repo);
+    }
+
+  /* Query remote repositories for target packages */
+  g_auto(GStrv) pkgs_spec_array = (char **)g_new0 (char *, actual_target_pkgs->len + 1);
+  for (guint i = 0; i < actual_target_pkgs->len; ++i)
+    pkgs_spec_array[i] = g_strdup (g_ptr_array_index (actual_target_pkgs, i));
+
+  hy_autoquery HyQuery query = get_packages_query (ctx, pkgs_spec_array, opt_archlist);
   g_autoptr(GPtrArray) target_pkgs = hy_query_run (query);
 
-  if (target_pkgs->len == 0)
+  for (guint i = 0; i < target_pkgs->len; ++i)
+    {
+      DnfPackage *pkg = g_ptr_array_index (target_pkgs, i);
+      const char *name = dnf_package_get_name (pkg);
+      if (name)
+        g_hash_table_add (directly_requested, g_strdup (name));
+    }
+
+  gboolean all_requested_already_installed = TRUE;
+  GHashTableIter r_it;
+  gpointer r_name;
+  g_hash_table_iter_init (&r_it, directly_requested);
+  while (g_hash_table_iter_next (&r_it, &r_name, NULL))
+    {
+      if (!g_hash_table_contains (installed_pkgs, r_name))
+        {
+          all_requested_already_installed = FALSE;
+          break;
+        }
+    }
+
+  if (target_pkgs->len == 0 && !all_requested_already_installed)
     {
       g_set_error_literal (error, DNF_ERROR, DNF_ERROR_NO_SOLUTION,
                            "No packages matched the specified criteria");
       return FALSE;
     }
 
-  /* Resolve dependency closure */
-  HyGoal goal = hy_goal_create (sack);
-  for (guint i = 0; i < target_pkgs->len; ++i)
-    {
-      hy_goal_install (goal, g_ptr_array_index (target_pkgs, i));
-    }
-
-  if (hy_goal_run_flags (goal, DNF_NONE) != 0)
-    {
-      g_set_error_literal (error, DNF_ERROR, DNF_ERROR_NO_SOLUTION,
-                           "Error resolving package dependencies");
-      hy_goal_free (goal);
-      return FALSE;
-    }
-
   g_autoptr(GPtrArray) all_pkgs = g_ptr_array_new_with_free_func ((GDestroyNotify)g_object_unref);
-  for (guint i = 0; i < target_pkgs->len; ++i)
+
+  if (target_pkgs->len > 0)
     {
-      g_ptr_array_add (all_pkgs, g_object_ref (g_ptr_array_index (target_pkgs, i)));
+      HyGoal goal = hy_goal_create (sack);
+      for (guint i = 0; i < target_pkgs->len; ++i)
+        {
+          hy_goal_install (goal, g_ptr_array_index (target_pkgs, i));
+        }
+
+      if (hy_goal_run_flags (goal, DNF_NONE) != 0)
+        {
+          g_set_error_literal (error, DNF_ERROR, DNF_ERROR_NO_SOLUTION,
+                               "Error resolving package dependencies");
+          hy_goal_free (goal);
+          return FALSE;
+        }
+
+      /* Include target packages in all_pkgs ONLY if new or integrity changed */
+      for (guint i = 0; i < target_pkgs->len; ++i)
+        {
+          DnfPackage *pkg = g_ptr_array_index (target_pkgs, i);
+          const char *name = dnf_package_get_name (pkg);
+          InstalledPkg *inst = name ? g_hash_table_lookup (installed_pkgs, name) : NULL;
+          if (!inst)
+            {
+              g_ptr_array_add (all_pkgs, g_object_ref (pkg));
+            }
+          else
+            {
+              g_autofree gchar *integrity = compute_package_integrity (pkg);
+              if (g_strcmp0 (integrity, inst->integrity) != 0)
+                g_ptr_array_add (all_pkgs, g_object_ref (pkg));
+            }
+        }
+
+      g_autoptr(GPtrArray) installs = hy_goal_list_installs (goal, NULL);
+      if (installs)
+        {
+          for (guint i = 0; i < installs->len; ++i)
+            {
+              DnfPackage *pkg = g_ptr_array_index (installs, i);
+              const char *name = dnf_package_get_name (pkg);
+              InstalledPkg *inst = name ? g_hash_table_lookup (installed_pkgs, name) : NULL;
+              if (!inst)
+                {
+                  g_ptr_array_add (all_pkgs, g_object_ref (pkg));
+                }
+              else
+                {
+                  g_autofree gchar *integrity = compute_package_integrity (pkg);
+                  if (g_strcmp0 (integrity, inst->integrity) != 0)
+                    g_ptr_array_add (all_pkgs, g_object_ref (pkg));
+                }
+            }
+        }
+
+      g_autoptr(GPtrArray) upgrades = hy_goal_list_upgrades (goal, NULL);
+      if (upgrades)
+        {
+          for (guint i = 0; i < upgrades->len; ++i)
+            {
+              DnfPackage *pkg = g_ptr_array_index (upgrades, i);
+              g_ptr_array_add (all_pkgs, g_object_ref (pkg));
+            }
+        }
+
+      hy_goal_free (goal);
     }
-  ptr_array_extend_and_steal (all_pkgs, hy_goal_list_installs (goal, NULL));
-  ptr_array_extend_and_steal (all_pkgs, hy_goal_list_upgrades (goal, NULL));
-  hy_goal_free (goal);
 
   DnfRepoLoader *repo_loader = dnf_context_get_repo_loader (ctx);
   g_autoptr(GPtrArray) resolved = select_one_pkg_for_nevra (repo_loader, all_pkgs);
@@ -323,16 +740,6 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
       const char *name = dnf_package_get_name (pkg);
       if (name)
         g_hash_table_insert (name_to_pkg, (gpointer)name, pkg);
-    }
-
-  /* Identify directly requested package names */
-  g_autoptr(GHashTable) directly_requested = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
-  for (guint i = 0; i < target_pkgs->len; ++i)
-    {
-      DnfPackage *pkg = g_ptr_array_index (target_pkgs, i);
-      const char *name = dnf_package_get_name (pkg);
-      if (name)
-        g_hash_table_add (directly_requested, g_strdup (name));
     }
 
   /* Parse exclude package names */
@@ -381,13 +788,22 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
               for (guint p = 0; p < providers->len; ++p)
                 {
                   DnfPackage *prov = g_ptr_array_index (providers, p);
-                  if (g_hash_table_contains (id_to_pkg, GUINT_TO_POINTER (dnf_package_get_id (prov))))
+                  const char *prov_name = dnf_package_get_name (prov);
+                  if (g_hash_table_contains (id_to_pkg, GUINT_TO_POINTER (dnf_package_get_id (prov))) ||
+                      (prov_name && g_hash_table_contains (installed_pkgs, prov_name)))
                     {
-                      const char *prov_name = dnf_package_get_name (prov);
                       if (g_strcmp0 (prov_name, pkg_name) != 0)
                         {
                           g_hash_table_add (dep_names, g_strdup (prov_name));
-                          g_hash_table_add (dep_nevras, g_strdup (dnf_package_get_nevra (prov)));
+                          const char *pnevra = dnf_package_get_nevra (prov);
+                          if (!pnevra && prov_name)
+                            {
+                              InstalledPkg *inst = g_hash_table_lookup (installed_pkgs, prov_name);
+                              if (inst)
+                                pnevra = inst->nevra;
+                            }
+                          if (pnevra)
+                            g_hash_table_add (dep_nevras, g_strdup (pnevra));
                         }
                     }
                 }
@@ -414,6 +830,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   g_autoptr(GHashTable) reachable = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   GQueue *queue = g_queue_new ();
 
+  gboolean any_in_reachable = FALSE;
   GHashTableIter req_iter;
   gpointer req_key;
   g_hash_table_iter_init (&req_iter, directly_requested);
@@ -423,6 +840,23 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
         {
           g_hash_table_add (reachable, g_strdup ((const char *)req_key));
           g_queue_push_tail (queue, g_strdup ((const char *)req_key));
+          any_in_reachable = TRUE;
+        }
+    }
+
+  /* If directly requested packages are all already installed, keep new packages reachable */
+  if (!any_in_reachable)
+    {
+      for (guint i = 0; i < resolved->len; ++i)
+        {
+          DnfPackage *pkg = g_ptr_array_index (resolved, i);
+          const char *name = dnf_package_get_name (pkg);
+          if (name && !g_hash_table_contains (excluded_pkgs, name) &&
+              !g_hash_table_contains (reachable, name))
+            {
+              g_hash_table_add (reachable, g_strdup (name));
+              g_queue_push_tail (queue, g_strdup (name));
+            }
         }
     }
 
@@ -441,7 +875,8 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
               if (g_hash_table_contains (excluded_pkgs, dep_name))
                 continue; /* Excluded: trim package and its exclusive dependencies */
 
-              if (!g_hash_table_contains (reachable, dep_name))
+              if (!g_hash_table_contains (reachable, dep_name) &&
+                  g_hash_table_contains (name_to_pkg, dep_name))
                 {
                   g_hash_table_add (reachable, g_strdup (dep_name));
                   g_queue_push_tail (queue, g_strdup (dep_name));
@@ -481,38 +916,10 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
       const char *nevra = dnf_package_get_nevra (pkg);
 
       g_autofree gchar *url = resolve_package_url (pkg, ctx);
+      g_autofree gchar *integrity = compute_package_integrity (pkg);
+      g_autofree gchar *hex_chksum = compute_package_checksum (pkg);
 
-      /* Extract checksum and calculate SRI integrity string */
-      int chk_type = 0;
-      const unsigned char *chk_bytes = dnf_package_get_chksum (pkg, &chk_type);
-      g_autofree gchar *integrity = NULL;
-      g_autofree gchar *hex_chksum = NULL;
-
-      if (chk_bytes)
-        {
-          int chk_len = 32;
-          const char *algo_name = "sha256";
-          switch (chk_type)
-            {
-            case G_CHECKSUM_SHA256: chk_len = 32; algo_name = "sha256"; break;
-            case G_CHECKSUM_SHA512: chk_len = 64; algo_name = "sha512"; break;
-            case G_CHECKSUM_SHA384: chk_len = 48; algo_name = "sha384"; break;
-            case G_CHECKSUM_SHA1:   chk_len = 20; algo_name = "sha1"; break;
-            case G_CHECKSUM_MD5:    chk_len = 16; algo_name = "md5"; break;
-            default: chk_len = 32; algo_name = "sha256"; break;
-            }
-
-          gchar *b64 = g_base64_encode (chk_bytes, chk_len);
-          integrity = g_strdup_printf ("%s-%s", algo_name, b64);
-          g_free (b64);
-
-          GString *hex = g_string_sized_new (chk_len * 2);
-          for (int b = 0; b < chk_len; ++b)
-            g_string_append_printf (hex, "%02x", chk_bytes[b]);
-          hex_chksum = g_string_free (hex, FALSE);
-        }
-
-      /* Compute direct and transitive dependencies among kept reachable packages */
+      /* Compute direct and transitive dependencies among kept reachable and installed packages */
       GHashTable *raw_deps = g_hash_table_lookup (pkg_direct_deps, name);
       GHashTable *raw_nevras = g_hash_table_lookup (pkg_direct_nevras, name);
 
@@ -539,7 +946,8 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
           dk = g_list_sort (dk, (GCompareFunc)strcmp);
           for (GList *l = dk; l; l = l->next)
             {
-              if (g_hash_table_contains (reachable, l->data))
+              if (g_hash_table_contains (reachable, l->data) ||
+                  g_hash_table_contains (installed_pkgs, l->data))
                 json_object_array_add (deps_arr, json_object_new_string ((const char *)l->data));
             }
           g_list_free (dk);
@@ -574,7 +982,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
                 {
                   const char *dep_n = tk;
                   if (g_strcmp0 (dep_n, name) != 0 &&
-                      g_hash_table_contains (reachable, dep_n) &&
+                      (g_hash_table_contains (reachable, dep_n) || g_hash_table_contains (installed_pkgs, dep_n)) &&
                       !g_hash_table_contains (trans_set, dep_n))
                     {
                       g_hash_table_add (trans_set, g_strdup (dep_n));

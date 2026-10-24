@@ -1,0 +1,22 @@
+{
+  "version":1,
+  "arch":"x86_64,noarch",
+  "requested":[
+    "tour"
+  ],
+  "packages":[
+    {
+      "name":"tour",
+      "version":"4-6",
+      "arch":"noarch",
+      "nevra":"tour-4-6.noarch",
+      "url":"file:///dummy/tour-4-6.noarch.rpm",
+      "integrity":"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "checksum":"0000000000000000000000000000000000000000000000000000000000000000",
+      "requested":true,
+      "dependencies":[],
+      "dependencies_nevra":[],
+      "transitive_dependencies":[]
+    }
+  ]
+}
