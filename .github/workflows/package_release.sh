@@ -27,7 +27,7 @@ echo "Packaging release for tag: ${TAG} (version: ${RELEASE_VERSION})"
 
 mkdir -p release_assets
 
-BASE_URL="https://github.com/bookingcom/microdnf-prebuilt/releases/download/${TAG}"
+BASE_URL="https://github.com/${GITHUB_REPOSITORY:-bookingcom/microdnf-prebuilt}/releases/download/${TAG}"
 
 # 1. Collect all 16 prebuilt binaries and compute integrity hashes
 declare -A INTEGRITIES
