@@ -4,6 +4,7 @@
  */
 
 #include "lock.h"
+#include "lock-repo.h"
 #include "dnf-utils.h"
 
 #include <stdio.h>
@@ -352,7 +353,7 @@ resolve_package_url (DnfPackage *pkg, DnfContext *ctx)
                 continue;
 
               LrHandle *h = dnf_repo_get_lr_handle (repo);
-              char **urls = NULL;
+              g_auto(GStrv) urls = NULL;
               if (h && lr_handle_getinfo (h, NULL, LRI_URLS, &urls) && urls && urls[0])
                 {
                   repo_base_url = g_strdup (urls[0]);
@@ -508,16 +509,14 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   /* Create and populate system repo representing packages installed in previous layers */
   if (installed_order->len > 0)
     {
-      Repo *sys_repo = repo_create (pool, HY_SYSTEM_REPO_NAME);
-      HyRepo hrepo = hy_repo_create (HY_SYSTEM_REPO_NAME);
-      sys_repo->appdata = hrepo;
+      Repo *sys_repo = lock_repo_create (pool, HY_SYSTEM_REPO_NAME);
 
       for (guint i = 0; i < installed_order->len; ++i)
         {
           InstalledPkg *inst = g_ptr_array_index (installed_order, i);
 
           /* Check if this package exists in remote repositories */
-          HyQuery pq = hy_query_create (sack);
+          hy_autoquery HyQuery pq = hy_query_create (sack);
           hy_query_filter (pq, HY_PKG_REPONAME, HY_NEQ, HY_SYSTEM_REPO_NAME);
           hy_query_filter (pq, HY_PKG_NAME, HY_EQ, inst->name);
           if (inst->nevra)
@@ -726,6 +725,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
 
   DnfRepoLoader *repo_loader = dnf_context_get_repo_loader (ctx);
   g_autoptr(GPtrArray) resolved = select_one_pkg_for_nevra (repo_loader, all_pkgs);
+  g_ptr_array_set_free_func (resolved, g_object_unref);
 
   /* Build fast lookup maps: ID -> DnfPackage, and NEVRA -> DnfPackage, and NAME -> DnfPackage */
   g_autoptr(GHashTable) id_to_pkg = g_hash_table_new (g_direct_hash, g_direct_equal);

@@ -1,5 +1,5 @@
 load("@bazel_lib//lib:transitions.bzl", "platform_transition_binary")
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//bazel:gresource.bzl", "glib_compile_resources")
 load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 
@@ -63,6 +63,22 @@ COMMON_COPTS = [
     "-Werror=main",
 ]
 
+# C wrapper for libdnf C++-only API used by lock.c
+cc_library(
+    name = "lock_repo",
+    srcs = ["lock-repo.cpp"],
+    hdrs = ["lock-repo.h"],
+    copts = [
+        "-std=c++17",
+        "-DLIBDNF_UNSTABLE_API",
+    ],
+    includes = ["."],
+    deps = [
+        "@glib//:glib",
+        "@libdnf//:libdnf",
+    ],
+)
+
 genrule(
     name = "copy_upstream_core",
     srcs = [
@@ -118,6 +134,7 @@ cc_binary(
     includes = ["."],
     linkopts = ["-rdynamic"],
     deps = [
+        ":lock_repo",
         "@glib//:gio",
         "@glib//:glib",
         "@glib//:gobject",
@@ -200,6 +217,7 @@ cc_binary(
     ],
     includes = ["."],
     deps = [
+        ":lock_repo",
         "@glib//:gio",
         "@glib//:glib",
         "@glib//:gobject",

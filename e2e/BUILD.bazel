@@ -212,3 +212,21 @@ bazel_integration_tests(
     ),
     workspace_path = "e2e/smoke_test",
 )
+
+sh_test(
+    name = "lock_direct_test",
+    srcs = ["test_lock_direct.sh"],
+    args = [
+        "$(rootpath //:dnf_lock)",
+        "$(rootpath //e2e/testdata:test.repo)",
+        "$(rootpath //e2e/testdata:repo/repodata/repomd.xml)",
+        "$(rootpath :test_generated_lock.lock.json)",
+    ],
+    data = [
+        ":test_generated_lock.lock.json",
+        "//:dnf_lock",
+        "//e2e/testdata:repo/repodata/repomd.xml",
+        "//e2e/testdata:test.repo",
+        "//e2e/testdata:test_repo_files",
+    ],
+)
