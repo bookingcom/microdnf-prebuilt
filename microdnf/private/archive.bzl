@@ -41,9 +41,6 @@ def _rpm_archive_impl(ctx):
     obs_files = depset(transitive = obs_depsets).to_list()
     whiteouts = ctx.attr.whiteouts
 
-    if not all_rpms and not obs_files and not whiteouts:
-        fail("rpm_archive '%s' has no input RPM files from %s and no obsolete_rpms/whiteouts" % (ctx.label.name, ctx.attr.rpms))
-
     args = ctx.actions.args()
     args.add("--output", out)
     if compression:
