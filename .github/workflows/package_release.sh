@@ -138,27 +138,29 @@ cp microdnf/BUILD.bazel "${PKG_DIR}/microdnf/BUILD.bazel"
 cp microdnf/private/*.bzl "${PKG_DIR}/microdnf/private/"
 cp microdnf/private/BUILD.bazel "${PKG_DIR}/microdnf/private/BUILD.bazel"
 
-# In packaged microdnf/BUILD.bazel, bind rpm2files alias to prebuilt binary select
+# In packaged microdnf/BUILD.bazel, bind the rpm2archive and rpm2files aliases to prebuilt binary selects
 python3 -c '
-with open("'"${PKG_DIR}"'/microdnf/BUILD.bazel", "r") as f:
+path = "'"${PKG_DIR}"'/microdnf/BUILD.bazel"
+with open(path, "r") as f:
     content = f.read()
-target = """alias(
-    name = "rpm2files",
-    actual = "//rpm2files:rpm2files",
+for tool, source in (("rpm2archive", "//:rpm2archive"), ("rpm2files", "//rpm2files:rpm2files")):
+    target = """alias(
+    name = "%s",
+    actual = "%s",
     visibility = ["//visibility:public"],
-)"""
-replacement = """alias(
-    name = "rpm2files",
+)""" % (tool, source)
+    replacement = """alias(
+    name = "%s",
     actual = select({
-        ":is_" + platform: "@rpm2files_" + platform + "//file"
+        ":is_" + platform: "@%s_" + platform + "//file"
         for platform in SUPPORTED_PLATFORMS
     }),
     visibility = ["//visibility:public"],
-)"""
-if target in content:
-    content = content.replace(target, replacement)
-    with open("'"${PKG_DIR}"'/microdnf/BUILD.bazel", "w") as f:
-        f.write(content)
+)""" % (tool, tool)
+    if target in content:
+        content = content.replace(target, replacement)
+with open(path, "w") as f:
+    f.write(content)
 '
 
 # 4. Create release tarball archive

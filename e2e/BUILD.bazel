@@ -203,6 +203,44 @@ sh_test(
     ],
 )
 
+# zstd-compressed layer: archive magic and extraction parity with the gzip variant
+rpm_archive(
+    name = "tour_archive_zstd",
+    compression = "zstd",
+    rpms = ["@test_rpms//:tour"],
+)
+
+rpm_extract(
+    name = "extracted_tour_zstd",
+    archive = ":tour_archive_zstd",
+    executables = [
+        "usr/bin/away",
+    ],
+    files = [
+        "etc/rollup",
+        "usr/bin/away",
+    ],
+)
+
+sh_test(
+    name = "test_rpm_extract_zstd_test",
+    srcs = ["test_zstd.sh"],
+    args = [
+        "$(location :tour_archive_zstd)",
+        "$(location :extracted_tour/usr/bin/away)",
+        "$(location :extracted_tour/etc/rollup)",
+        "$(location :extracted_tour_zstd/usr/bin/away)",
+        "$(location :extracted_tour_zstd/etc/rollup)",
+    ],
+    data = [
+        ":extracted_tour/etc/rollup",
+        ":extracted_tour/usr/bin/away",
+        ":extracted_tour_zstd/etc/rollup",
+        ":extracted_tour_zstd/usr/bin/away",
+        ":tour_archive_zstd",
+    ],
+)
+
 # Downstream integration test driven by rules_bazel_integration_test
 default_test_runner(
     name = "default_test_runner",
