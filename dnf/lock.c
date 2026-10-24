@@ -541,10 +541,10 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
                 }
 
               /* Duplicate solvable to sys_repo */
-              Id cand_id = dnf_package_get_id (cand);
-              Solvable *s_cand = pool_id2solvable (pool, cand_id);
-
+              /* repo_add_solvable may reallocate pool->solvables, so look up both
+               * solvables only after it. */
               Id new_id = repo_add_solvable (sys_repo);
+              Solvable *s_cand = pool_id2solvable (pool, dnf_package_get_id (cand));
               Solvable *s_new = pool_id2solvable (pool, new_id);
               s_new->name = s_cand->name;
               s_new->arch = s_cand->arch;
