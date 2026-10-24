@@ -1,5 +1,8 @@
 {
     "url": "https://ftp.osuosl.org/pub/rpm/releases/rpm-4.18.x/rpm-4.18.2.tar.bz2",
+    "mirror_urls": [
+        "https://ftp.icm.edu.pl/packages/rpm/releases/rpm-4.18.x/rpm-4.18.2.tar.bz2"
+    ],
     "integrity": "sha256-un7uG8LG+DvnPApA0VnGJcuu2XazrARCM0BPslrhuXk=",
     "strip_prefix": "rpm-4.18.2",
     "overlay": {
