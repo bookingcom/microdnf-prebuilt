@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "arch": "x86_64,noarch",
+  "requested": [
+    "satisfied",
+    "wapp"
+  ],
+  "packages": [
+    {
+      "name": "wapp",
+      "version": "1-1",
+      "arch": "noarch",
+      "nevra": "wapp-1-1.noarch",
+      "url": "e2e/testdata/repo/tour-4-6.noarch.rpm",
+      "integrity": "sha256-dq9fKacaZcnZkSB8RifcvTUS3zOESj2Qj6dPHcvDYyE=",
+      "checksum": "76af5f29a71a65c9d991207c4627dcbd3512df33844a3d908fa74f1dcbc36321",
+      "requested": true,
+      "dependencies": [],
+      "dependencies_nevra": [],
+      "transitive_dependencies": [],
+      "weak_dependencies": [
+        "wrec"
+      ]
+    },
+    {
+      "name": "wrec",
+      "version": "1-1",
+      "arch": "noarch",
+      "nevra": "wrec-1-1.noarch",
+      "url": "e2e/testdata/repo/tour-4-6.noarch.rpm",
+      "integrity": "sha256-dq9fKacaZcnZkSB8RifcvTUS3zOESj2Qj6dPHcvDYyE=",
+      "checksum": "76af5f29a71a65c9d991207c4627dcbd3512df33844a3d908fa74f1dcbc36321",
+      "requested": false,
+      "dependencies": [],
+      "dependencies_nevra": [],
+      "transitive_dependencies": [],
+      "weak_dependencies": []
+    },
+    {
+      "name": "hostroot",
+      "version": "1-1",
+      "arch": "noarch",
+      "nevra": "hostroot-1-1.noarch",
+      "url": "e2e/testdata/repo/tour-4-6.noarch.rpm",
+      "integrity": "sha256-dq9fKacaZcnZkSB8RifcvTUS3zOESj2Qj6dPHcvDYyE=",
+      "checksum": "76af5f29a71a65c9d991207c4627dcbd3512df33844a3d908fa74f1dcbc36321",
+      "requested": false,
+      "dependencies": [],
+      "dependencies_nevra": [],
+      "transitive_dependencies": [],
+      "weak_dependencies": []
+    }
+  ]
+}

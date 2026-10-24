@@ -32,9 +32,6 @@ def _rpm_archive_impl(ctx):
     all_rpms_depset = depset(transitive = rpm_depsets, order = "postorder")
     all_rpms = all_rpms_depset.to_list()
 
-    if not all_rpms:
-        fail("rpm_archive '%s' has no input RPM files from %s" % (ctx.label.name, ctx.attr.rpms))
-
     args = ctx.actions.args()
     args.add("--output", out)
     if compression:
@@ -45,7 +42,7 @@ def _rpm_archive_impl(ctx):
     ctx.actions.run(
         inputs = all_rpms,
         outputs = [out],
-        executable = ctx.executable._rpm2archive_tool,
+        executable = ctx.executable.rpm2archive_tool,
         arguments = [args],
         mnemonic = "Rpm2Archive",
         progress_message = "Creating archive %{output} from RPM targets",
@@ -77,12 +74,12 @@ rpm_archive = rule(
         "out": attr.output(
             doc = "Optional output archive file. Defaults to {name}.tar.gz (or .tar.zst / .tar).",
         ),
-        "_rpm2archive_tool": attr.label(
+        "rpm2archive_tool": attr.label(
             default = Label("//microdnf:rpm2archive"),
             executable = True,
             allow_single_file = True,
             cfg = "exec",
-            doc = "rpm2archive binary tool.",
+            doc = "The rpm2archive binary. Downstream modules that cannot use the default pass @microdnf_tools//:rpm2archive.",
         ),
     },
 )

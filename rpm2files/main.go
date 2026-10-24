@@ -2,17 +2,17 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/klauspost/compress/zstd"
 )
 
 type compositeCloser struct {
@@ -45,27 +45,15 @@ func cleanTarPath(p string) string {
 	return p
 }
 
-func findZstd() (string, error) {
-	if r, err := runfiles.New(); err == nil {
-		for _, target := range []string{"zstd/zstd_cli", "zstd/zstd_cli.exe", "zstd/zstd"} {
-			if loc, err := r.Rlocation(target); err == nil && loc != "" {
-				if _, statErr := os.Stat(loc); statErr == nil {
-					return loc, nil
-				}
-			}
-		}
+// decoded returns r as a ReadCloser that closes the decoder, then the file it reads from.
+func decoded(f *os.File, r io.Reader, closeDecoder func()) io.ReadCloser {
+	return &compositeCloser{
+		Reader: r,
+		closer: func() error {
+			closeDecoder()
+			return f.Close()
+		},
 	}
-	// Fallback: check adjacent directory of the executable (e.g. In prebuilt bundle)
-	if execPath, err := os.Executable(); err == nil {
-		dir := filepath.Dir(execPath)
-		for _, name := range []string{"zstd", "zstd_cli", "zstd.exe"} {
-			p := filepath.Join(dir, name)
-			if _, statErr := os.Stat(p); statErr == nil {
-				return p, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("zstd binary not found in runfiles or executable directory; host PATH is not used")
 }
 
 func openArchive(archivePath string) (io.ReadCloser, error) {
@@ -77,53 +65,32 @@ func openArchive(archivePath string) (io.ReadCloser, error) {
 	magic := make([]byte, 4)
 	n, err := f.Read(magic)
 	if err != nil && err != io.EOF {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 
 	// Gzip magic: 0x1f, 0x8b
-	if n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+	if bytes.HasPrefix(magic[:n], []byte{0x1f, 0x8b}) {
 		gzr, err := gzip.NewReader(f)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 		}
-		return &compositeCloser{
-			Reader: gzr,
-			closer: func() error {
-				gzr.Close()
-				return f.Close()
-			},
-		}, nil
+		return decoded(f, gzr, func() { _ = gzr.Close() }), nil
 	}
 
 	// Zstd magic: 0x28, 0xb5, 0x2f, 0xfd
-	if (n >= 4 && magic[0] == 0x28 && magic[1] == 0xb5 && magic[2] == 0x2f && magic[3] == 0xfd) ||
-		strings.HasSuffix(archivePath, ".zst") || strings.HasSuffix(archivePath, ".tzst") {
-		f.Close()
-		zstdBin, err := findZstd()
+	if bytes.HasPrefix(magic[:n], []byte{0x28, 0xb5, 0x2f, 0xfd}) {
+		zr, err := zstd.NewReader(f)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decompress zstd archive %s: %w", archivePath, err)
+			_ = f.Close()
+			return nil, fmt.Errorf("failed to create zstd reader: %w", err)
 		}
-		cmd := exec.Command(zstdBin, "-d", "-c", archivePath)
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, fmt.Errorf("failed to open zstd pipe: %w", err)
-		}
-		if err := cmd.Start(); err != nil {
-			return nil, fmt.Errorf("failed to start zstd (%s): %w", zstdBin, err)
-		}
-		return &compositeCloser{
-			Reader: stdout,
-			closer: func() error {
-				stdout.Close()
-				return cmd.Wait()
-			},
-		}, nil
+		return decoded(f, zr, zr.Close), nil
 	}
 
 	// Plain tar
@@ -192,11 +159,11 @@ func main() {
 	var archiveFlag string
 	var argsFileFlag string
 
-	flag.StringVar(&archiveFlag, "archive", "", "Path to the input archive file (.tar, .tar.gz)")
+	flag.StringVar(&archiveFlag, "archive", "", "Path to the input archive file (.tar, .tar.gz, .tar.zst)")
 	flag.StringVar(&argsFileFlag, "args-file", "", "Path to the args file containing extraction specs (<req_path> <out_path> <is_exec>)")
 
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s --archive <archive> --args-file <args_file>\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s --archive <archive> --args-file <args_file>\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -212,7 +179,6 @@ func main() {
 	}
 	if argsFile == "" && len(posArgs) > 0 {
 		argsFile = strings.TrimPrefix(posArgs[0], "@")
-		posArgs = posArgs[1:]
 	}
 
 	if archivePath == "" {
@@ -242,7 +208,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error opening archive %s: %v\n", archivePath, err)
 		os.Exit(1)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	tr := tar.NewReader(rc)
 	members := make(map[string]*tarEntry)
@@ -258,7 +224,7 @@ func main() {
 		}
 
 		var content []byte
-		if hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeRegA {
+		if hdr.Typeflag == tar.TypeReg {
 			content, err = io.ReadAll(tr)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error reading tar member %s: %v\n", hdr.Name, err)

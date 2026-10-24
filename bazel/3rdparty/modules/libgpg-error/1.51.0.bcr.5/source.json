@@ -4,14 +4,14 @@
     "strip_prefix": "libgpg-error-1.51",
     "overlay": {
         "BUILD.bazel": "sha256-x/ZVULAmdW1utrRnJiLWX9EH75SYPaLUWHC7iBM/GUQ=",
-        "MODULE.bazel": "sha256-jbF++B9grzU85CQl22uHu/wQSAc54RQsjA2vYOjG0Cc=",
+        "MODULE.bazel": "sha256-pe6Eog/UnIvmOYmOnlpzGgFBAzoLu2QrcJeMvwEaPMc=",
         "src/code-from-errno.h": "sha256-moWs+TwT1VBbjOGE2RnK45j7RvmbwWYOzXwNxMmb5rU=",
         "src/code-to-errno.h": "sha256-ooG0TCKD1hPeO5p+X7GEl1qGONTHuHgoM8jTCU4gFIE=",
         "src/config.h": "sha256-7wfLnuux/7kZcFMTnV//5C2Niu2G8+c3SpZ/XZh7h4w=",
         "src/err-codes-sym.h": "sha256-QWy0Yz1MqvHzxjCuIGuhf6jEmNZr4Cq3Te3HnU5N3RI=",
         "src/err-sources-sym.h": "sha256-rrosxOf2coVgvooOcWCf3JPTCbjg+Vj9pwLheqAeaGc=",
         "src/errnos-sym.h": "sha256-KpuOTqQdUxEH6H6kjwlTvNY+4NubHFWkNna9dzPD1MY=",
-        "src/gpg-error.h": "sha256-aPNFkTN5R2qPK6jw5wTpE2wGrccKzNO6gK6m5aMcPfs=",
-        "src/gpgrt.h": "sha256-aPNFkTN5R2qPK6jw5wTpE2wGrccKzNO6gK6m5aMcPfs="
+        "src/gpg-error.h": "sha256-8nSD0u6iyfi8iUAvYBWRVN9IfMdCCSUlI6nBUOJ6ODU=",
+        "src/gpgrt.h": "sha256-8nSD0u6iyfi8iUAvYBWRVN9IfMdCCSUlI6nBUOJ6ODU="
     }
 }

@@ -127,14 +127,8 @@ run_rpm2archive (int argc, char **argv, GError **error)
   if (!g_option_context_parse (opt_ctx, &argc, &argv, error))
     return 1;
 
-  if (!opt_files || !opt_files[0])
-    {
-      g_set_error_literal (error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
-                           "No input RPM packages specified");
-      return 1;
-    }
-
-  guint num_pkgs = g_strv_length (opt_files);
+  /* Zero input RPMs is valid: the result is an empty archive. */
+  guint num_pkgs = opt_files ? g_strv_length (opt_files) : 0;
 
   /* Hermetic host portability: if /usr/lib/rpm/rpmrc is absent and RPM_CONFIGDIR is unset */
   if (access ("/usr/lib/rpm/rpmrc", R_OK) != 0 && !getenv ("RPM_CONFIGDIR"))
@@ -249,10 +243,16 @@ run_rpm2archive (int argc, char **argv, GError **error)
       use_gzip = TRUE;
     }
 
-  if (use_zstd)
-    archive_write_add_filter_zstd (a);
-  else if (use_gzip)
-    archive_write_add_filter_gzip (a);
+  if ((use_zstd && archive_write_add_filter_zstd (a) != ARCHIVE_OK) ||
+      (use_gzip && archive_write_add_filter_gzip (a) != ARCHIVE_OK))
+    {
+      g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                   "Failed to enable %s compression: %s",
+                   use_zstd ? "zstd" : "gzip", archive_error_string (a));
+      archive_write_free (a);
+      rpmtsFree (ts);
+      return 1;
+    }
 
   if (archive_write_set_format_pax_restricted (a) != ARCHIVE_OK)
     {

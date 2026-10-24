@@ -5,8 +5,11 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "aarch64.lock.json",
+    "features.repo",
     "generate_repodata.py",
+    "installroot/var/lib/rpm/rpmdb.sqlite",
     "test.repo",
+    "transaction.lock.json",
     "x86_64.lock.json",
 ])
 
@@ -42,5 +45,76 @@ filegroup(
         "repo/drpms/tour-4-5_4-6.noarch.drpm",
         "repo/mystery-devel-19.67-1.noarch.rpm",
         "repo/tour-4-6.noarch.rpm",
+    ],
+)
+
+# Synthetic metadata-only repository for the dnf_lock feature tests
+run_binary(
+    name = "generate_features_repodata",
+    tool = ":generate_repodata",
+    args = [
+        "--scenario",
+        "features",
+        "--out-dir",
+        "$(RULEDIR)/features-repo/repodata",
+    ],
+    outs = [
+        "features-repo/repodata/filelists.xml.gz",
+        "features-repo/repodata/modules.yaml.gz",
+        "features-repo/repodata/other.xml.gz",
+        "features-repo/repodata/primary.xml.gz",
+        "features-repo/repodata/repomd.xml",
+    ],
+)
+
+filegroup(
+    name = "features_repo_files",
+    srcs = [":generate_features_repodata"],
+)
+
+# Parent image root for --installroot tests: os-release (platform:el9) and a
+# sqlite rpmdb seeded by make_installroot_rpmdb.sh.
+filegroup(
+    name = "installroot_files",
+    srcs = [
+        "installroot/usr/lib/os-release",
+        "installroot/var/lib/rpm/rpmdb.sqlite",
+    ],
+)
+
+# Only the rpmdb: the root must still resolve to the image root (not var/lib/rpm).
+filegroup(
+    name = "installroot_rpmdb_only",
+    srcs = ["installroot/var/lib/rpm/rpmdb.sqlite"],
+)
+
+# Same image in the usr/lib/sysimage/rpm layout.
+genrule(
+    name = "sysimage_root",
+    srcs = [
+        "installroot/usr/lib/os-release",
+        "installroot/var/lib/rpm/rpmdb.sqlite",
+    ],
+    outs = [
+        "sysimage-root/usr/lib/os-release",
+        "sysimage-root/usr/lib/sysimage/rpm/rpmdb.sqlite",
+    ],
+    cmd = "cp $(location installroot/usr/lib/os-release) $(location sysimage-root/usr/lib/os-release) && " +
+          "cp $(location installroot/var/lib/rpm/rpmdb.sqlite) $(location sysimage-root/usr/lib/sysimage/rpm/rpmdb.sqlite)",
+)
+
+# Mixed source and generated files: checked-in os-release, generated rpmdb.
+genrule(
+    name = "mixed_root_rpmdb",
+    srcs = ["installroot/var/lib/rpm/rpmdb.sqlite"],
+    outs = ["mixed-root/var/lib/rpm/rpmdb.sqlite"],
+    cmd = "cp $< $@",
+)
+
+filegroup(
+    name = "mixed_root",
+    srcs = [
+        "mixed-root/usr/lib/os-release",
+        ":mixed_root_rpmdb",
     ],
 )

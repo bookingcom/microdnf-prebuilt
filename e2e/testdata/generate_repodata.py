@@ -161,23 +161,190 @@ UPDATEINFO_XML = b"""<?xml version="1.0" ?>
 </updates>
 """
 
+# Synthetic metadata-only repository for the dnf_lock feature tests
+# (installroot, excludepkgs, modules, best/nobest, rich and weak deps).
+# Each tuple: (name, epoch, version, release, arch, {dependency type: [entries]}).
+# Entries are a bare name, a rich dependency "(...)", or (name, flags, version).
+FEATURE_PACKAGES = [
+    # --installroot: libfoo-1.0, oldtool, rich-cond, condhost and dgtool-2.0 are in the seeded rpmdb.
+    ("libfoo", 0, "1.0", "1", "noarch", {}),
+    ("libfoo", 0, "2.0", "1", "noarch", {}),
+    ("oldtool", 0, "1.0", "1", "noarch", {"recommends": ["optional-x"]}),
+    ("optional-x", 0, "1.0", "1", "noarch", {}),
+    ("app", 0, "1.0", "1", "noarch", {"requires": [("libfoo", "GE", "2.0"), "oldtool"]}),
+    ("newapp", 0, "1.0", "1", "noarch", {"recommends": ["optional-x"]}),
+    # excludepkgs: release cut-off globs and full NEVRAs.
+    ("ca-certificates", 0, "2025.2.80_v9.0.305", "1.el9", "noarch", {}),
+    ("ca-certificates", 0, "2026.2.92_v9.0.319", "1.el9", "noarch", {}),
+    ("certuser", 0, "1.0", "1", "noarch", {"requires": ["ca-certificates"]}),
+    ("expat", 0, "2.7.2", "1.el10", "x86_64", {}),
+    ("expat", 0, "2.7.3", "1.el10_2.7", "x86_64", {}),
+    # best / nobest: the newest bestapp is not installable.
+    ("bestapp", 0, "1.0", "1", "noarch", {}),
+    ("bestapp", 0, "2.0", "1", "noarch", {"requires": ["missing-lib"]}),
+    # Downgrades: dgtool-2.0 is in the seeded rpmdb, the repo carries both versions.
+    ("dgtool", 0, "1.0", "1", "noarch", {}),
+    ("dgtool", 0, "2.0", "1", "noarch", {}),
+    ("dgapp", 0, "1.0", "1", "noarch", {"requires": ["dgtool"]}),
+    # Like glibc-devel from an older mirror: pins its own build of an installed package.
+    ("dgtool-devel", 0, "1.0", "1", "noarch", {"requires": [("dgtool", "EQ", "1.0")]}),
+    # Rich dependencies.
+    ("richapp", 0, "1.0", "1", "noarch", {"requires": ["(rich-a if rich-cond)", "(rich-b or rich-c)"]}),
+    ("rich-a", 0, "1.0", "1", "noarch", {}),
+    ("rich-b", 0, "1.0", "1", "noarch", {}),
+    ("rich-c", 0, "1.0", "1", "noarch", {}),
+    ("rich-cond", 0, "1.0", "1", "noarch", {}),
+    # Weak dependencies: Recommends and reverse Supplements.
+    # installroot: the installed condhost requires "(cond-extra if cond-trigger)".
+    ("cond-trigger", 0, "1.0", "1", "noarch", {}),
+    ("cond-extra", 0, "1.0", "1", "noarch", {}),
+    ("weakapp", 0, "1.0", "1", "noarch", {"recommends": ["weak-rec"]}),
+    ("weak-rec", 0, "1.0", "1", "noarch", {}),
+    ("weak-sup", 0, "1.0", "1", "noarch", {"supplements": ["weakapp"]}),
+    # Modules: non-modular mysql 8.0 and the modular mysql:8.4 stream.
+    ("mysql", 0, "8.0.44", "1.el9", "x86_64", {}),
+    ("mysql", 0, "8.4.7", "1.module+el9.7.0+90001+e2e00084", "x86_64", {}),
+]
+
+FEATURE_MODULES_YAML = b"""---
+document: modulemd
+version: 2
+data:
+  name: mysql
+  stream: "8.4"
+  version: 9070020251010000000
+  context: e2e00084
+  arch: x86_64
+  summary: MySQL Module
+  description: MySQL 8.4 stream for the dnf_lock e2e tests.
+  license:
+    module:
+    - MIT
+  dependencies:
+  - buildrequires:
+      platform: [el9]
+    requires:
+      platform: [el9]
+  profiles:
+    server:
+      rpms:
+      - mysql
+  artifacts:
+    rpms:
+    - mysql-0:8.4.7-1.module+el9.7.0+90001+e2e00084.x86_64
+...
+"""
+
+
+def _nevra_file(name, ver, rel, arch):
+    return f"{name}-{ver}-{rel}.{arch}.rpm"
+
+
+def _dep_entries(entries):
+    out = []
+    for entry in entries:
+        if isinstance(entry, tuple):
+            name, flags, ver = entry
+            out.append(f'      <rpm:entry name="{name}" flags="{flags}" epoch="0" ver="{ver}"/>')
+        else:
+            name = entry.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            out.append(f'      <rpm:entry name="{name}"/>')
+    return out
+
+
+def feature_repodata():
+    """Returns (primary, filelists, other) XML for FEATURE_PACKAGES."""
+    primary = []
+    filelists = []
+    other = []
+    for name, epoch, ver, rel, arch, deps in FEATURE_PACKAGES:
+        nevra = f"{name}-{epoch}:{ver}-{rel}.{arch}"
+        pkgid = hashlib.sha256(nevra.encode()).hexdigest()
+        lines = [
+            '<package type="rpm">',
+            f"  <name>{name}</name>",
+            f"  <arch>{arch}</arch>",
+            f'  <version epoch="{epoch}" ver="{ver}" rel="{rel}"/>',
+            f'  <checksum type="sha256" pkgid="YES">{pkgid}</checksum>',
+            f"  <summary>{name} test package</summary>",
+            f"  <description>{name} test package.</description>",
+            "  <packager></packager>",
+            "  <url></url>",
+            '  <time file="1404109239" build="1404109194"/>',
+            '  <size package="1000" installed="0" archive="0"/>',
+            f'  <location href="features/{_nevra_file(name, ver, rel, arch)}"/>',
+            "  <format>",
+            "    <rpm:license>MIT</rpm:license>",
+            "    <rpm:vendor/>",
+            "    <rpm:group>Unspecified</rpm:group>",
+            "    <rpm:buildhost>localhost</rpm:buildhost>",
+            f"    <rpm:sourcerpm>{name}-{ver}-{rel}.src.rpm</rpm:sourcerpm>",
+            '    <rpm:header-range start="0" end="0"/>',
+            "    <rpm:provides>",
+            f'      <rpm:entry name="{name}" flags="EQ" epoch="{epoch}" ver="{ver}" rel="{rel}"/>',
+            "    </rpm:provides>",
+        ]
+        for dep_type in ("requires", "recommends", "supplements"):
+            if deps.get(dep_type):
+                lines.append(f"    <rpm:{dep_type}>")
+                lines.extend(_dep_entries(deps[dep_type]))
+                lines.append(f"    </rpm:{dep_type}>")
+        lines += ["  </format>", "</package>"]
+        primary.extend(lines)
+        version = f'  <version epoch="{epoch}" ver="{ver}" rel="{rel}"/>'
+        filelists += [f'<package pkgid="{pkgid}" name="{name}" arch="{arch}">', version, "</package>"]
+        other += [f'<package pkgid="{pkgid}" name="{name}" arch="{arch}">', version, "</package>"]
+
+    count = len(FEATURE_PACKAGES)
+    head = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    primary_xml = (
+        head
+        + f'<metadata xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" packages="{count}">\n'
+        + "\n".join(primary)
+        + "\n</metadata>\n"
+    )
+    filelists_xml = (
+        head
+        + f'<filelists xmlns="http://linux.duke.edu/metadata/filelists" packages="{count}">\n'
+        + "\n".join(filelists)
+        + "\n</filelists>\n"
+    )
+    other_xml = (
+        head
+        + f'<otherdata xmlns="http://linux.duke.edu/metadata/other" packages="{count}">\n'
+        + "\n".join(other)
+        + "\n</otherdata>\n"
+    )
+    return primary_xml.encode(), filelists_xml.encode(), other_xml.encode()
+
+
 def compress(data):
     return gzip.compress(data, mtime=0)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--scenario", choices=["default", "features"], default="default")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    files = {
-        "primary.xml.gz": ("primary", PRIMARY_XML),
-        "filelists.xml.gz": ("filelists", FILELISTS_XML),
-        "other.xml.gz": ("other", OTHER_XML),
-        "prestodelta.xml.gz": ("prestodelta", PRESTODELTA_XML),
-        "updateinfo.xml.gz": ("updateinfo", UPDATEINFO_XML),
-    }
+    if args.scenario == "features":
+        primary_xml, filelists_xml, other_xml = feature_repodata()
+        files = {
+            "primary.xml.gz": ("primary", primary_xml),
+            "filelists.xml.gz": ("filelists", filelists_xml),
+            "other.xml.gz": ("other", other_xml),
+            "modules.yaml.gz": ("modules", FEATURE_MODULES_YAML),
+        }
+    else:
+        files = {
+            "primary.xml.gz": ("primary", PRIMARY_XML),
+            "filelists.xml.gz": ("filelists", FILELISTS_XML),
+            "other.xml.gz": ("other", OTHER_XML),
+            "prestodelta.xml.gz": ("prestodelta", PRESTODELTA_XML),
+            "updateinfo.xml.gz": ("updateinfo", UPDATEINFO_XML),
+        }
 
     meta_entries = []
     for fname, (dtype, raw) in files.items():

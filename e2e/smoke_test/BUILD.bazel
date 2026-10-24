@@ -13,6 +13,7 @@ exports_files([
 rpm_archive(
     name = "smoke_archive",
     compression = "gzip",
+    rpm2archive_tool = "@microdnf_tools//:rpm2archive",
     rpms = ["@downstream_rpms//:tour"],
 )
 
@@ -28,6 +29,46 @@ rpm_extract(
         "usr/bin/away",
     ],
     rpm2files_tool = "@microdnf_tools//:rpm2files",
+)
+
+# zstd-compressed layer extracted with the prebuilt rpm2files (no zstd CLI shipped)
+rpm_archive(
+    name = "smoke_archive_zstd",
+    compression = "zstd",
+    rpm2archive_tool = "@microdnf_tools//:rpm2archive",
+    rpms = ["@downstream_rpms//:tour"],
+)
+
+rpm_extract(
+    name = "smoke_extracted_zstd",
+    archive = ":smoke_archive_zstd",
+    executables = [
+        "usr/bin/away",
+    ],
+    files = [
+        "etc/rollup",
+        "usr/bin/away",
+    ],
+    rpm2files_tool = "@microdnf_tools//:rpm2files",
+)
+
+sh_test(
+    name = "smoke_zstd_test",
+    srcs = ["test_zstd.sh"],
+    args = [
+        "$(location :smoke_archive_zstd)",
+        "$(location :smoke_extracted/usr/bin/away)",
+        "$(location :smoke_extracted/etc/rollup)",
+        "$(location :smoke_extracted_zstd/usr/bin/away)",
+        "$(location :smoke_extracted_zstd/etc/rollup)",
+    ],
+    data = [
+        ":smoke_archive_zstd",
+        ":smoke_extracted/etc/rollup",
+        ":smoke_extracted/usr/bin/away",
+        ":smoke_extracted_zstd/etc/rollup",
+        ":smoke_extracted_zstd/usr/bin/away",
+    ],
 )
 
 sh_test(

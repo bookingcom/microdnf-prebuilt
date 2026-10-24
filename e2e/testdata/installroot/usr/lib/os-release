@@ -1,0 +1,4 @@
+NAME="dnf_lock e2e installroot"
+VERSION_ID="9"
+ID="ol"
+PLATFORM_ID="platform:el9"

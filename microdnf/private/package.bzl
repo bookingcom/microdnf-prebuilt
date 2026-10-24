@@ -37,3 +37,28 @@ rpm_package = rule(
         "deps": attr.label_list(providers = [RpmInfo], default = []),
     },
 )
+
+def _rpm_package_group_impl(ctx):
+    trans_rpms = [dep[RpmInfo].transitive_rpms for dep in ctx.attr.deps]
+    trans_pkgs = [dep[RpmInfo].transitive_packages for dep in ctx.attr.deps]
+    return [
+        DefaultInfo(files = depset(transitive = trans_rpms)),
+        RpmInfo(
+            name = ctx.attr.package_name,
+            version = "",
+            arch = ctx.attr.arch,
+            rpm_file = None,
+            transitive_rpms = depset(transitive = trans_rpms, order = "postorder"),
+            transitive_packages = depset(transitive = trans_pkgs),
+        ),
+    ]
+
+rpm_package_group = rule(
+    implementation = _rpm_package_group_impl,
+    doc = "Aggregates RPM packages without an RPM of its own; with no deps it is an empty RpmInfo.",
+    attrs = {
+        "package_name": attr.string(default = ""),
+        "arch": attr.string(default = ""),
+        "deps": attr.label_list(providers = [RpmInfo], default = []),
+    },
+)
