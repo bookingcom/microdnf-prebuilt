@@ -615,6 +615,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
 
       repo_internalize (sys_repo);
       pool_set_installed (pool, sys_repo);
+      lock_sack_repos_changed (sack);
     }
 
   /* Query remote repositories for target packages */

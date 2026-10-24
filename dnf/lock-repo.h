@@ -6,6 +6,7 @@
 #pragma once
 
 #include <glib.h>
+#include <libdnf/dnf-sack.h>
 #include <solv/pool.h>
 #include <solv/repo.h>
 
@@ -16,5 +17,10 @@ G_BEGIN_DECLS
  * points back at the repo whenever it internalizes, and frees the HyRepo with
  * the sack. */
 Repo *lock_repo_create (Pool *pool, const char *name);
+
+/* Tells @sack that solvables were added behind its back, so it rebuilds the
+ * whatprovides index and the considered map (sized by pool->nsolvables)
+ * before the next query or solve. */
+void lock_sack_repos_changed (DnfSack *sack);
 
 G_END_DECLS
