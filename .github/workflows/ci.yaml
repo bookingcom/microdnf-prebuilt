@@ -53,10 +53,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout PR code
+      - name: Checkout PR code in merged state
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: refs/pull/${{ github.event.number }}/merge
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@9f0750536d239de15c1f8528e2ba6c17a99fb752 # 0.19.1
