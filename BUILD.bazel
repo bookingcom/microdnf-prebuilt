@@ -1,3 +1,4 @@
+load("@tar.bzl", "tar")
 load("//microdnf/private:platforms.bzl", "SUPPORTED_PLATFORMS")
 
 package(default_visibility = ["//visibility:public"])
@@ -74,7 +75,7 @@ alias(
     actual = "//dnf:rpm2files_all",
 )
 
-genrule(
+tar(
     name = "tools_archive",
     srcs = [
         ":dnf_lock",
@@ -82,31 +83,13 @@ genrule(
         ":rpm2archive",
         ":rpm2files",
     ],
-    outs = ["microdnf_tools.tar.gz"],
-    cmd = """
-TMP_DIR=$$(mktemp -d)
-trap 'rm -rf "$$TMP_DIR"' EXIT
-for f in $(locations :dnf_lock); do
-  if [ -f "$$f" ] && [ -x "$$f" ]; then
-    cp -L "$$f" "$$TMP_DIR/dnf_lock"
-    cp -L "$$f" "$$TMP_DIR/lock"
-  fi
-done
-for f in $(locations :microdnf); do
-  if [ -f "$$f" ] && [ -x "$$f" ]; then
-    cp -L "$$f" "$$TMP_DIR/microdnf"
-  fi
-done
-for f in $(locations :rpm2archive); do
-  if [ -f "$$f" ] && [ -x "$$f" ]; then
-    cp -L "$$f" "$$TMP_DIR/rpm2archive"
-  fi
-done
-for f in $(locations :rpm2files); do
-  if [ -f "$$f" ] && [ -x "$$f" ]; then
-    cp -L "$$f" "$$TMP_DIR/rpm2files"
-  fi
-done
-tar -czf $@ -C "$$TMP_DIR" dnf_lock lock microdnf rpm2archive rpm2files
-""",
+    mtree = [
+        "dnf_lock uid=0 gid=0 mode=0755 time=0 type=file content=$(location :dnf_lock)",
+        "lock uid=0 gid=0 mode=0755 time=0 type=link link=dnf_lock",
+        "microdnf uid=0 gid=0 mode=0755 time=0 type=file content=$(location :microdnf)",
+        "rpm2archive uid=0 gid=0 mode=0755 time=0 type=file content=$(location :rpm2archive)",
+        "rpm2files uid=0 gid=0 mode=0755 time=0 type=file content=$(location :rpm2files)",
+    ],
+    out = "microdnf_tools.tar.gz",
+    compress = "gzip",
 )

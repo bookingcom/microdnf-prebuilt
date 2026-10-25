@@ -103,7 +103,13 @@ Modeled after `jq_host_alias_repo` in `bazel-contrib/jq.bzl`:
 
 ---
 
-## 4. Bazel Invocation Protocol
+## 4. Bazel Guidelines & Invocation Protocol
+
+### Avoid `genrule`
+- **Do not use `genrule`**: The use of `genrule` should always be avoided.
+- **Check upstream rules first**: Always search the Bazel Central Registry (BCR) and canonical rulesets (e.g., `tar.bzl`, `rules_pkg`, `rules_cc`, `aspect_rules_py`, `bazel_skylib`, etc.) for existing rules that already cover the requirements before writing custom actions. Hermetic, structured rules must always be preferred over ad-hoc shell commands.
+
+### Bazel Invocation Protocol
 
 All Bazel commands (`build`, `test`, `run`, `cquery`, `query`, etc.) must be invoked with an explicitly generated UUID:
 
@@ -158,3 +164,11 @@ When bumping or modifying a 3rdparty module under `bazel/3rdparty/modules/<modul
 - **Timezone**: All timestamps, dates, and build times presented in reports, summaries, or commit notes must be localized to the Amsterdam timezone (`Europe/Amsterdam`, CET/CEST, UTC+1 / UTC+2).
 - **File Links**: Always link to files and code symbols using GitHub-flavored markdown links (`[target](file:///path/to/target)`).
 - **Conciseness**: Keep updates focused, structured, and informative.
+
+---
+
+## 8. Local Customizations
+
+If `AGENTS.local.md` exists in the repository root, load and follow its instructions for user-specific overrides and configuration.
+
+@[AGENTS.local.md](AGENTS.local.md)

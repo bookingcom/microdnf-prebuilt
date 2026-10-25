@@ -7,4 +7,5 @@ repodata/
 **/repodata/
 release_notes.md
 release_assets/
+/AGENTS.local.md
 
