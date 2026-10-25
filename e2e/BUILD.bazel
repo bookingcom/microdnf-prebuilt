@@ -141,6 +141,7 @@ sh_test(
 rpm_archive(
     name = "tour_archive",
     compression = "gzip",
+    rpm2archive_tool = "//:rpm2archive",
     rpms = ["@test_rpms//:tour"],
 )
 
@@ -152,6 +153,26 @@ sh_test(
     ],
     data = [
         ":tour_archive",
+    ],
+)
+
+rpm_archive(
+    name = "whiteout_archive",
+    compression = "gzip",
+    obsolete_rpms = ["//e2e/testdata:repo/mystery-devel-19.67-1.noarch.rpm"],
+    rpm2archive_tool = "//:rpm2archive",
+    rpms = ["@test_rpms//:tour"],
+    whiteouts = ["etc/custom_deleted_config.conf"],
+)
+
+sh_test(
+    name = "test_rpm_whiteout_archive_test",
+    srcs = ["test_whiteout_archive.sh"],
+    args = [
+        "$(location :whiteout_archive)",
+    ],
+    data = [
+        ":whiteout_archive",
     ],
 )
 

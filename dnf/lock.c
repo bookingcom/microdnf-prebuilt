@@ -680,6 +680,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
     }
 
   g_autoptr(GPtrArray) all_pkgs = g_ptr_array_new_with_free_func ((GDestroyNotify)g_object_unref);
+  g_autoptr(GPtrArray) obsoleted = NULL;
 
   if (target_pkgs->len > 0)
     {
@@ -697,11 +698,10 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
           return FALSE;
         }
 
-      /* Only @System packages can be obsoleted, and a lockfile only adds packages */
-      g_autoptr(GPtrArray) obsoleted = hy_goal_list_obsoleted (goal, NULL);
+      /* Only @System packages can be obsoleted */
+      obsoleted = hy_goal_list_obsoleted (goal, NULL);
       for (guint i = 0; obsoleted && i < obsoleted->len; ++i)
-        g_printerr ("warning: the solve obsoletes %s from a layer below; a lockfile cannot remove it, "
-                    "so the image keeps it\n",
+        g_printerr ("warning: the solve obsoletes %s from a layer below\n",
                     dnf_package_get_nevra (g_ptr_array_index (obsoleted, i)));
 
       /* Include target packages in all_pkgs ONLY if new or integrity changed */
@@ -932,6 +932,28 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
     json_object_array_add (req_arr, json_object_new_string ((const char *)l->data));
   g_list_free (req_list);
   json_object_object_add (root, "requested", req_arr);
+
+  if (obsoleted && obsoleted->len > 0)
+    {
+      struct json_object *obsoleted_arr = json_object_new_array ();
+      for (guint i = 0; i < obsoleted->len; ++i)
+        {
+          DnfPackage *opkg = g_ptr_array_index (obsoleted, i);
+          struct json_object *o_obj = json_object_new_object ();
+          json_object_object_add (o_obj, "name", json_object_new_string (dnf_package_get_name (opkg)));
+          const char *oevr = dnf_package_get_evr (opkg);
+          if (oevr)
+            json_object_object_add (o_obj, "version", json_object_new_string (oevr));
+          const char *oarch = dnf_package_get_arch (opkg);
+          if (oarch)
+            json_object_object_add (o_obj, "arch", json_object_new_string (oarch));
+          const char *onevra = dnf_package_get_nevra (opkg);
+          if (onevra)
+            json_object_object_add (o_obj, "nevra", json_object_new_string (onevra));
+          json_object_array_add (obsoleted_arr, o_obj);
+        }
+      json_object_object_add (root, "obsoleted", obsoleted_arr);
+    }
 
   struct json_object *packages_arr = json_object_new_array ();
 

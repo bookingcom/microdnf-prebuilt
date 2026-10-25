@@ -104,6 +104,29 @@ normalize_rpm_path (const char *path)
   return g_strdup_printf ("./%s", path);
 }
 
+static void
+ensure_parent_dirs (struct archive *a, struct archive_entry *entry, GHashTable *emitted_dirs, const char *path)
+{
+  g_autofree char *dir = g_path_get_dirname (path);
+  if (!dir || strcmp (dir, ".") == 0 || strcmp (dir, "/") == 0)
+    return;
+
+  if (g_hash_table_contains (emitted_dirs, dir))
+    return;
+
+  ensure_parent_dirs (a, entry, emitted_dirs, dir);
+
+  archive_entry_clear (entry);
+  archive_entry_copy_pathname (entry, dir);
+  archive_entry_set_filetype (entry, AE_IFDIR);
+  archive_entry_set_perm (entry, 0755);
+  archive_entry_set_uname (entry, "root");
+  archive_entry_set_gname (entry, "root");
+  archive_entry_set_mtime (entry, 0, 0);
+  archive_write_header (a, entry);
+  g_hash_table_add (emitted_dirs, g_strdup (dir));
+}
+
 int
 run_rpm2archive (int argc, char **argv, GError **error)
 {
@@ -111,6 +134,8 @@ run_rpm2archive (int argc, char **argv, GError **error)
   g_autofree gchar *opt_compression = NULL;
   gboolean opt_nocompression = FALSE;
   gboolean opt_verbose = FALSE;
+  g_auto(GStrv) opt_obsolete_rpms = NULL;
+  g_auto(GStrv) opt_whiteouts = NULL;
   g_auto(GStrv) opt_files = NULL;
 
   const GOptionEntry entries[] = {
@@ -118,6 +143,9 @@ run_rpm2archive (int argc, char **argv, GError **error)
     { "nocompression", 'n', 0, G_OPTION_ARG_NONE, &opt_nocompression, "Create uncompressed tar archive", NULL },
     { "compression", 'C', 0, G_OPTION_ARG_STRING, &opt_compression, "Compression format: gzip, zstd, none, or auto", "FORMAT" },
     { "verbose", 'v', 0, G_OPTION_ARG_NONE, &opt_verbose, "Verbose logging", NULL },
+    { "obsolete-rpm", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_obsolete_rpms, "RPM package(s) being obsoleted/removed (adds OCI whiteouts for deleted files)", "RPM..." },
+    { "obsolete", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_obsolete_rpms, "Alias for --obsolete-rpm", "RPM..." },
+    { "whiteout", 'W', 0, G_OPTION_ARG_STRING_ARRAY, &opt_whiteouts, "File path to whiteout (remove) in archive", "PATH" },
     { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_files, "Input RPM files", "RPM..." },
     { NULL }
   };
@@ -127,14 +155,19 @@ run_rpm2archive (int argc, char **argv, GError **error)
   if (!g_option_context_parse (opt_ctx, &argc, &argv, error))
     return 1;
 
-  if (!opt_files || !opt_files[0])
+  gboolean has_files = (opt_files && opt_files[0]);
+  gboolean has_obsolete = (opt_obsolete_rpms && opt_obsolete_rpms[0]);
+  gboolean has_whiteouts = (opt_whiteouts && opt_whiteouts[0]);
+
+  if (!has_files && !has_obsolete && !has_whiteouts)
     {
       g_set_error_literal (error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
-                           "No input RPM packages specified");
+                           "No input RPM packages or whiteout specifications provided");
       return 1;
     }
 
-  guint num_pkgs = g_strv_length (opt_files);
+  guint num_pkgs = has_files ? g_strv_length (opt_files) : 0;
+  guint num_obs = has_obsolete ? g_strv_length (opt_obsolete_rpms) : 0;
 
   /* Hermetic host portability: if /usr/lib/rpm/rpmrc is absent and RPM_CONFIGDIR is unset */
   if (access ("/usr/lib/rpm/rpmrc", R_OK) != 0 && !getenv ("RPM_CONFIGDIR"))
@@ -208,6 +241,81 @@ run_rpm2archive (int argc, char **argv, GError **error)
       rpmfilesFree (files);
       headerFree (h);
       Fclose (fdi);
+    }
+
+  /* Identify files from obsoleted RPMs that should be marked with OCI whiteouts */
+  g_autoptr(GHashTable) whiteout_set = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+
+  for (guint i = 0; i < num_obs; ++i)
+    {
+      const char *fn = opt_obsolete_rpms[i];
+      FD_t fdi = Fopen (fn, "r.ufdio");
+      if (Ferror (fdi))
+        {
+          g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                       "Failed to open obsoleted RPM '%s': %s", fn, Fstrerror (fdi));
+          rpmtsFree (ts);
+          return 1;
+        }
+
+      Header h;
+      int rc = rpmReadPackageFile (ts, fdi, "rpm2archive", &h);
+      if (rc != RPMRC_OK && rc != RPMRC_NOKEY && rc != RPMRC_NOTTRUSTED)
+        {
+          g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                       "Failed to read header from obsoleted RPM '%s'", fn);
+          Fclose (fdi);
+          rpmtsFree (ts);
+          return 1;
+        }
+
+      rpmfiles files = rpmfilesNew (NULL, h, 0, RPMFI_KEEPHEADER);
+      int fc = rpmfilesFC (files);
+      for (int ix = 0; ix < fc; ++ix)
+        {
+          char *raw_path = rpmfilesFN (files, ix);
+          char *norm_path = normalize_rpm_path (raw_path);
+          free (raw_path);
+
+          rpm_mode_t mode = rpmfilesFMode (files, ix);
+          if (!S_ISDIR (mode))
+            {
+              /* If a file in the new RPMs replaces this path, no whiteout needed */
+              if (!g_hash_table_contains (winner_map, norm_path))
+                {
+                  g_autofree char *dir = g_path_get_dirname (norm_path);
+                  g_autofree char *base = g_path_get_basename (norm_path);
+                  char *wh_path = g_strdup_printf ("%s/.wh.%s", dir, base);
+                  g_hash_table_add (whiteout_set, wh_path);
+                }
+            }
+          g_free (norm_path);
+        }
+
+      rpmfilesFree (files);
+      headerFree (h);
+      Fclose (fdi);
+    }
+
+  /* Process explicit whiteouts */
+  if (opt_whiteouts)
+    {
+      for (guint i = 0; opt_whiteouts[i]; ++i)
+        {
+          char *norm_path = normalize_rpm_path (opt_whiteouts[i]);
+          if (!g_hash_table_contains (winner_map, norm_path))
+            {
+              g_autofree char *dir = g_path_get_dirname (norm_path);
+              g_autofree char *base = g_path_get_basename (norm_path);
+              char *wh_path;
+              if (g_str_has_prefix (base, ".wh."))
+                wh_path = g_strdup (norm_path);
+              else
+                wh_path = g_strdup_printf ("%s/.wh.%s", dir, base);
+              g_hash_table_add (whiteout_set, wh_path);
+            }
+          g_free (norm_path);
+        }
     }
 
   /* Pass 2: Create target archive and write entries in package order */
@@ -299,6 +407,29 @@ run_rpm2archive (int argc, char **argv, GError **error)
   g_autoptr(GHashTable) emitted_dirs = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   struct archive_entry *entry = archive_entry_new ();
   char *buf = g_malloc (BUFSIZE);
+
+  /* Write OCI whiteout deletion entries */
+  GList *wh_list = g_hash_table_get_keys (whiteout_set);
+  wh_list = g_list_sort (wh_list, (GCompareFunc)strcmp);
+  for (GList *l = wh_list; l; l = l->next)
+    {
+      const char *wh_path = (const char *)l->data;
+      ensure_parent_dirs (a, entry, emitted_dirs, wh_path);
+
+      archive_entry_clear (entry);
+      archive_entry_copy_pathname (entry, wh_path);
+      archive_entry_set_size (entry, 0);
+      archive_entry_set_filetype (entry, AE_IFREG);
+      archive_entry_set_perm (entry, 0644);
+      archive_entry_set_uname (entry, "root");
+      archive_entry_set_gname (entry, "root");
+      archive_entry_set_mtime (entry, 0, 0);
+      archive_write_header (a, entry);
+
+      if (opt_verbose)
+        g_print ("  [WHITEOUT] %s\n", wh_path);
+    }
+  g_list_free (wh_list);
 
     for (guint i = 0; i < num_pkgs; ++i)
     {

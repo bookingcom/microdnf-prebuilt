@@ -73,7 +73,7 @@ def locked(name, ver="1", arch="noarch"):
 
 
 def lock(case, repo, below, request, archlist="x86_64,i686,noarch"):
-    """Locks request on top of the lockfile entries below; returns (exit code, locked NEVRAs, stderr)."""
+    """Locks request on top of the lockfile entries below; returns (exit code, locked NEVRAs, stderr, obsoleted)."""
     root = f"{TMP}/{case.replace(' ', '-')}"
     write_repo(root, repo)
     with open(f"{root}/below.lock.json", "w", encoding="utf-8") as f:
@@ -82,10 +82,13 @@ def lock(case, repo, below, request, archlist="x86_64,i686,noarch"):
                         "--releasever=9", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
                         "-o", f"{root}/out.json", *request], capture_output=True, text=True, check=False)
     nevras = []
+    obsoleted = []
     if r.returncode == 0:
         with open(f"{root}/out.json", encoding="utf-8") as f:
-            nevras = sorted(p["nevra"] for p in json.load(f)["packages"])
-    return r.returncode, nevras, r.stderr
+            data = json.load(f)
+            nevras = sorted(p["nevra"] for p in data["packages"])
+            obsoleted = data.get("obsoleted", [])
+    return r.returncode, nevras, r.stderr, obsoleted
 
 
 def check(case, got, want, stderr):
@@ -95,7 +98,7 @@ def check(case, got, want, stderr):
 
 
 CASE = "installonly versions below are all installed"
-rc, nevras, err = lock(
+rc, nevras, err, obsoleted = lock(
     CASE,
     [{"name": "kernel", "ver": "1", "arch": "x86_64"}, {"name": "kernel", "ver": "2", "arch": "x86_64"},
      {"name": "needs-kernel-1", "requires": [("kernel", "1")]}],
@@ -104,7 +107,7 @@ rc, nevras, err = lock(
 check(CASE, (rc, nevras), (0, ["needs-kernel-1-1-1.noarch"]), err)
 
 CASE = "every arch below is installed"
-rc, nevras, err = lock(
+rc, nevras, err, obsoleted = lock(
     CASE,
     [{"name": "foo", "arch": "x86_64"}, {"name": "foo", "arch": "i686", "provides": ["foo-32bit"]},
      {"name": "needs-foo-32bit", "requires": ["foo-32bit"]}],
@@ -113,14 +116,14 @@ rc, nevras, err = lock(
 check(CASE, (rc, nevras), (0, ["needs-foo-32bit-1-1.noarch"]), err)
 
 CASE = "a later layer still replaces a package of an earlier one"
-rc, nevras, err = lock(
+rc, nevras, err, obsoleted = lock(
     CASE,
     [{"name": "tour", "ver": "1"}, {"name": "tour", "ver": "2"}, {"name": "app", "requires": ["tour"]}],
     [locked("tour", "1"), locked("tour", "2")],
     ["app", "tour"])
 check(CASE, (rc, nevras), (0, ["app-1-1.noarch"]), err)
 
-CASE = "obsoleting a package below warns that the image keeps it"
-rc, nevras, err = lock(CASE, [{"name": "old"}, {"name": "new", "obsoletes": ["old"]}], [locked("old")], ["new"])
-check(CASE, (rc, nevras, "the solve obsoletes old-1-1.noarch from a layer below" in err),
-      (0, ["new-1-1.noarch"], True), err)
+CASE = "obsoleting a package below records it and warns"
+rc, nevras, err, obsoleted = lock(CASE, [{"name": "old"}, {"name": "new", "obsoletes": ["old"]}], [locked("old")], ["new"])
+check(CASE, (rc, nevras, obsoleted, "the solve obsoletes old-1-1.noarch from a layer below" in err),
+      (0, ["new-1-1.noarch"], [{"name": "old", "version": "1-1", "arch": "noarch", "nevra": "old-1-1.noarch"}], True), err)
