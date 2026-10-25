@@ -17,6 +17,13 @@ common --lockfile_mode=update
 build --incompatible_strict_action_env
 build --sandbox_default_allow_network=false
 
+# Suppress C/C++ compiler warnings and action output noise
+build --copt=-w
+build --cxxopt=-w
+build --host_copt=-w
+build --host_cxxopt=-w
+build --output_filter=^$
+
 # Local resource limits (leave 2 CPUs free)
 build --local_resources=cpu=HOST_CPUS-2
 build --local_test_jobs=HOST_CPUS-2
@@ -59,10 +66,12 @@ build:docker --experimental_enable_docker_sandbox
 build:docker --experimental_docker_image=gcr.io/flame-public/rbe-ubuntu24-04:latest
 build:docker --spawn_strategy=docker
 
-# CI configuration defaults to isolated docker sandbox
-build:ci --config=docker
+# CI configuration
 common:ci --color=yes
+common:ci --show_progress_rate_limit=5
+common:ci --ui_event_filters=-warning
 test:ci --test_output=errors
+test:ci --test_summary=terse
 
 # Import user-specific configuration (must be last)
 try-import %workspace%/.bazelrc.user
