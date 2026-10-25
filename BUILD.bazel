@@ -28,7 +28,10 @@ TARGETS = [
 [
     alias(
         name = target,
-        actual = "//dnf:" + target,
+        actual = select({
+            "//microdnf:is_" + platform: "//dnf:{}_{}".format(target, platform)
+            for platform in SUPPORTED_PLATFORMS
+        }),
     )
     for target in TARGETS
 ]
@@ -52,7 +55,10 @@ TARGETS = [
 
 alias(
     name = "rpm2files",
-    actual = "//rpm2files:rpm2files",
+    actual = select({
+        "//microdnf:is_" + platform: "//dnf:rpm2files_" + platform
+        for platform in SUPPORTED_PLATFORMS
+    }),
 )
 
 [
@@ -80,11 +86,27 @@ genrule(
     cmd = """
 TMP_DIR=$$(mktemp -d)
 trap 'rm -rf "$$TMP_DIR"' EXIT
-cp $(location :dnf_lock) "$$TMP_DIR/dnf_lock"
-cp $(location :dnf_lock) "$$TMP_DIR/lock"
-cp $(location :microdnf) "$$TMP_DIR/microdnf"
-cp $(location :rpm2archive) "$$TMP_DIR/rpm2archive"
-cp $(location :rpm2files) "$$TMP_DIR/rpm2files"
+for f in $(locations :dnf_lock); do
+  if [ -f "$$f" ] && [ -x "$$f" ]; then
+    cp -L "$$f" "$$TMP_DIR/dnf_lock"
+    cp -L "$$f" "$$TMP_DIR/lock"
+  fi
+done
+for f in $(locations :microdnf); do
+  if [ -f "$$f" ] && [ -x "$$f" ]; then
+    cp -L "$$f" "$$TMP_DIR/microdnf"
+  fi
+done
+for f in $(locations :rpm2archive); do
+  if [ -f "$$f" ] && [ -x "$$f" ]; then
+    cp -L "$$f" "$$TMP_DIR/rpm2archive"
+  fi
+done
+for f in $(locations :rpm2files); do
+  if [ -f "$$f" ] && [ -x "$$f" ]; then
+    cp -L "$$f" "$$TMP_DIR/rpm2files"
+  fi
+done
 tar -czf $@ -C "$$TMP_DIR" dnf_lock lock microdnf rpm2archive rpm2files
 """,
 )
