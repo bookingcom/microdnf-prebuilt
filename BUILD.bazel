@@ -24,6 +24,7 @@ TARGETS = [
     "microdnf",
     "rpm2archive",
     "dnf_lock",
+    "mark",
 ]
 
 [
@@ -71,6 +72,11 @@ alias(
 ]
 
 alias(
+    name = "rpmdb-mark",
+    actual = ":mark",
+)
+
+alias(
     name = "rpm2files_all",
     actual = "//dnf:rpm2files_all",
 )
@@ -79,6 +85,7 @@ tar(
     name = "tools_archive",
     srcs = [
         ":dnf_lock",
+        ":mark",
         ":microdnf",
         ":rpm2archive",
         ":rpm2files",
@@ -86,6 +93,8 @@ tar(
     mtree = [
         "dnf_lock uid=0 gid=0 mode=0755 time=0 type=file content=$(location :dnf_lock)",
         "lock uid=0 gid=0 mode=0755 time=0 type=link link=dnf_lock",
+        "mark uid=0 gid=0 mode=0755 time=0 type=file content=$(location :mark)",
+        "rpmdb-mark uid=0 gid=0 mode=0755 time=0 type=link link=mark",
         "microdnf uid=0 gid=0 mode=0755 time=0 type=file content=$(location :microdnf)",
         "rpm2archive uid=0 gid=0 mode=0755 time=0 type=file content=$(location :rpm2archive)",
         "rpm2files uid=0 gid=0 mode=0755 time=0 type=file content=$(location :rpm2files)",

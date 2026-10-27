@@ -1,0 +1,5 @@
+[ol9_baseos]
+name=Oracle Linux 9 BaseOS
+baseurl=file://@REPO_DIR@
+enabled=1
+gpgcheck=0

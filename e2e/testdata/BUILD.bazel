@@ -7,6 +7,9 @@ exports_files([
     "aarch64.lock.json",
     "changed_integrity.lock.json",
     "generate_repodata.py",
+    "ol9_repo/curl-7.76.1-40.el9_8.8.x86_64.rpm",
+    "ol9_repo/libcurl-7.76.1-40.el9_8.8.x86_64.rpm",
+    "ol9_repo/ol9.repo",
     "test.repo",
     "x86_64.lock.json",
 ])
@@ -44,4 +47,9 @@ filegroup(
         "repo/mystery-devel-19.67-1.noarch.rpm",
         "repo/tour-4-6.noarch.rpm",
     ],
+)
+
+filegroup(
+    name = "ol9_repo_files",
+    srcs = glob(["ol9_repo/**"]),
 )

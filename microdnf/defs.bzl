@@ -21,6 +21,10 @@ load(
     _rpm_lock = "rpm_lock",
 )
 load(
+    "//microdnf/private:mark.bzl",
+    _rpm_mark = "rpm_mark",
+)
+load(
     "//microdnf/private:toolchain.bzl",
     _MicrodnfInfo = "MicrodnfInfo",
     _microdnf_toolchain = "microdnf_toolchain",
@@ -35,5 +39,6 @@ dnf_lock_host_alias_repo = _dnf_lock_host_alias_repo
 rpm2files_host_alias_repo = _rpm2files_host_alias_repo
 
 rpm_lock = _rpm_lock
+rpm_mark = _rpm_mark
 rpm_archive = _rpm_archive
 rpm_extract = _rpm_extract

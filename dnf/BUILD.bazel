@@ -246,6 +246,57 @@ filegroup(
     ],
 )
 
+cc_binary(
+    name = "mark",
+    srcs = [
+        ":copy_upstream_core",
+        "mark.c",
+        "mark.h",
+        "mark-main.c",
+    ],
+    copts = COMMON_COPTS,
+    defines = [
+        'PACKAGE_LIBDIR=\\"/usr/lib64/dnf\\"',
+        'PACKAGE_DATADIR=\\"/usr/share/dnf\\"',
+        'BUILDDIR=\\"dnf\\"',
+        'SRCDIR=\\"dnf\\"',
+    ],
+    includes = ["."],
+    deps = [
+        "@glib//:gio",
+        "@glib//:glib",
+        "@glib//:gobject",
+        "@json-c//:json-c",
+        "@libdnf//:libdnf",
+        "@libsolv//:libsolv",
+        "@rpm//:rpm",
+        "@rpm//:rpmio",
+        "@smartcols//:smartcols",
+    ],
+)
+
+[
+    platform_transition_binary(
+        name = "mark_" + platform,
+        binary = ":mark",
+        target_platform = "//bazel:" + platform,
+    )
+    for platform in SUPPORTED_PLATFORMS
+]
+
+filegroup(
+    name = "mark_all",
+    srcs = [
+        ":mark_" + platform
+        for platform in SUPPORTED_PLATFORMS
+    ],
+)
+
+alias(
+    name = "rpmdb-mark",
+    actual = ":mark",
+)
+
 [
     platform_transition_binary(
         name = "rpm2files_" + platform,
