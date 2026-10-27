@@ -148,6 +148,7 @@ run_mark (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   g_autofree gchar *opt_installroot = NULL;
   g_autofree gchar *opt_dbpath = NULL;
   g_autofree gchar *opt_archlist = NULL;
+  g_autofree gchar *opt_forcearch = NULL;
   g_auto(GStrv) opt_packages = NULL;
   g_auto(GStrv) opt_remaining = NULL;
   gboolean opt_nodeps = FALSE;
@@ -157,6 +158,7 @@ run_mark (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
     { "dbpath", '\0', 0, G_OPTION_ARG_FILENAME, &opt_dbpath, "Path to rpm database (default: /var/lib/rpm)", "PATH" },
     { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, "Limit query to packages of given architectures", "ARCH,..." },
     { "arch", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, "Limit query to packages of given architectures", "ARCH,..." },
+    { "forcearch", '\0', 0, G_OPTION_ARG_STRING, &opt_forcearch, "Solve for this architecture instead of the host's (default: first non-noarch --archlist entry)", "ARCH" },
     { "nodeps", '\0', 0, G_OPTION_ARG_NONE, &opt_nodeps, "Do not resolve dependencies", NULL },
     { "package", 'p', 0, G_OPTION_ARG_STRING_ARRAY, &opt_packages, "Package specification to mark as installed", "PKG[=VER]" },
     { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_remaining, "Target packages", "PACKAGE..." },
@@ -166,6 +168,9 @@ run_mark (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   g_option_context_add_main_entries (opt_ctx, entries, NULL);
   if (!g_option_context_parse (opt_ctx, &argc, &argv, error))
     return FALSE;
+
+  if (!opt_archlist && opt_forcearch && *opt_forcearch)
+    opt_archlist = g_strdup_printf ("%s,noarch", opt_forcearch);
 
   /* If installroot specified in subcommand, override ctx install root */
   if (opt_installroot)

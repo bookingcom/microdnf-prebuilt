@@ -52,6 +52,63 @@ static gboolean installroot_used = FALSE;
 static gboolean cachedir_used = FALSE;
 static gboolean reposdir_used = FALSE;
 static gboolean varsdir_used = FALSE;
+static gchar *opt_forcearch_global = NULL;
+
+/* Maps a solve architecture to dnf's $basearch (i686 -> i386, armv7hl -> armhfp, ...). */
+static const gchar *
+basearch_for_arch (const gchar *arch)
+{
+  if (arch[0] == 'i' && arch[1] != '\0' && g_str_has_suffix (arch, "86") && strlen (arch) == 4)
+    return "i386";
+  if (g_str_has_prefix (arch, "armv") && g_str_has_suffix (arch, "hl"))
+    return "armhfp";
+  return arch;
+}
+
+/* The architecture to solve for: --forcearch, else the first non-noarch/src
+ * --archlist / --arch entry. Read from a copy of argv, ahead of dnf_context_setup,
+ * so that $basearch in repo URLs follows it too. */
+static gchar *
+find_solve_arch (int argc, char **argv)
+{
+  if (opt_forcearch_global && *opt_forcearch_global)
+    return g_strdup (opt_forcearch_global);
+
+  g_autofree gchar *opt_archlist = NULL;
+  g_autofree gchar *opt_forcearch = NULL;
+  const GOptionEntry entries[] = {
+    { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, NULL, NULL },
+    { "arch", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, NULL, NULL },
+    { "forcearch", '\0', 0, G_OPTION_ARG_STRING, &opt_forcearch, NULL, NULL },
+    { NULL }
+  };
+
+  g_autofree gchar **argv_copy = g_new0 (gchar *, argc + 1);
+  for (int i = 0; i < argc; i++)
+    argv_copy[i] = argv[i];
+  int argc_copy = argc;
+  gchar **argv_ptr = argv_copy;
+
+  g_autoptr(GOptionContext) arch_ctx = g_option_context_new (NULL);
+  g_option_context_add_main_entries (arch_ctx, entries, NULL);
+  g_option_context_set_ignore_unknown_options (arch_ctx, TRUE);
+  g_option_context_set_help_enabled (arch_ctx, FALSE);
+  if (!g_option_context_parse (arch_ctx, &argc_copy, &argv_ptr, NULL))
+    return NULL;
+
+  if (opt_forcearch && *opt_forcearch)
+    return g_steal_pointer (&opt_forcearch);
+  if (opt_archlist)
+    {
+      g_auto(GStrv) archs = g_strsplit_set (opt_archlist, ", ", -1);
+      for (char **a = archs; *a; ++a)
+        {
+          if (**a && g_strcmp0 (*a, "noarch") != 0 && g_strcmp0 (*a, "src") != 0)
+            return g_strdup (*a);
+        }
+    }
+  return NULL;
+}
 
 static gboolean
 process_global_option (const gchar  *option_name,
@@ -63,7 +120,7 @@ process_global_option (const gchar  *option_name,
   DnfContext *ctx = DNF_CONTEXT (data);
 
   gboolean ret = TRUE;
-  if (g_strcmp0 (option_name, "--config") == 0)
+  if (g_strcmp0 (option_name, "--config") == 0 || g_strcmp0 (option_name, "--repo-config") == 0)
     {
       config_used = TRUE;
       dnf_context_set_config_file_path (value);
@@ -89,6 +146,21 @@ process_global_option (const gchar  *option_name,
       for (char **it = patterns; *it; ++it)
         dnf_context_enable_plugins (*it);
       enable_disable_plugin_used = TRUE;
+    }
+  else if (g_strcmp0 (option_name, "--forcearch") == 0)
+    {
+      g_free (opt_forcearch_global);
+      opt_forcearch_global = g_strdup (value);
+    }
+  else if (g_strcmp0 (option_name, "--excludepkgs") == 0)
+    {
+      ret = dnf_conf_add_setopt ("excludepkgs", DNF_CONF_COMMANDLINE, value, &local_error);
+    }
+  else if (g_strcmp0 (option_name, "--reposdir") == 0)
+    {
+      reposdir_used = TRUE;
+      g_auto(GStrv) reposdir = g_strsplit (value, ",", -1);
+      dnf_context_set_repos_dir (ctx, (const gchar * const *)reposdir);
     }
   else if (g_strcmp0 (option_name, "--installroot") == 0)
     {
@@ -229,12 +301,23 @@ process_global_option (const gchar  *option_name,
           g_auto(GStrv) varsdir = g_strsplit (setopt[1], ",", -1);
           dnf_context_set_vars_dir (ctx, (const gchar * const *)varsdir);
         }
+      else if (strcmp (setopt[0], "forcearch") == 0)
+        {
+          if (setopt[1][0] != '\0')
+            {
+              g_free (opt_forcearch_global);
+              opt_forcearch_global = g_strdup (setopt[1]);
+            }
+          else
+            {
+              local_error = g_error_new (G_OPTION_ERROR, G_OPTION_ERROR_BAD_VALUE,
+                                         "Empty value in: %s", value);
+              ret = FALSE;
+            }
+        }
       else
         {
-          local_error = g_error_new (G_OPTION_ERROR,
-                                     G_OPTION_ERROR_BAD_VALUE,
-                                     "Unable to handle: %s", value);
-          ret = FALSE;
+          ret = dnf_conf_add_setopt (setopt[0], DNF_CONF_COMMANDLINE, setopt[1], &local_error);
         }
     }
   else
@@ -254,16 +337,20 @@ static const GOptionEntry global_opts[] = {
   { "assumeyes", 'y', G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE, &opt_yes, "Automatically answer yes for all questions", NULL },
   { "best", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE, &opt_best, "Try the best available package versions in transactions", NULL },
   { "config", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Configuration file location", "<config file>" },
+  { "repo-config", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Repository configuration file location", "<config file>" },
   { "disablerepo", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Disable repository by an id", "ID" },
   { "disableplugin", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Disable plugins by name", "name" },
   { "enablerepo", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Enable repository by an id", "ID" },
   { "enableplugin", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Enable plugins by name", "name" },
+  { "excludepkgs", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Hide packages matching NEVRA globs from the solver", "GLOB,..." },
+  { "forcearch", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Force the use of an architecture", "ARCH" },
   { "nobest", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE, &opt_nobest, "Do not limit the transaction to the best candidates", NULL },
   { "installroot", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Set install root", "PATH" },
   { "nodocs", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE, &opt_nodocs, "Install packages without docs", NULL },
   { "noplugins", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE, &disable_plugins_loading, "Disable loading of plugins", NULL },
   { "refresh", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE, &opt_refresh, "Set metadata as expired before running the command", NULL },
   { "releasever", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Override the value of $releasever in config and repo files", "RELEASEVER" },
+  { "reposdir", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option, "Override repository configuration directory", "PATH" },
   { "setopt", '\0', G_OPTION_FLAG_NONE, G_OPTION_ARG_CALLBACK, process_global_option,
     "Override a configuration option (install_weak_deps=0/1, allow_vendor_change=0/1, keepcache=0/1, module_platform_id=<name:stream>, cachedir=<path>, reposdir=<path1>,<path2>,..., tsflags=nodocs/test, varsdir=<path1>,<path2>,..., repo_id.option_name=<value>)", "<option>=<value>" },
   { NULL }
@@ -563,6 +650,13 @@ main (int   argc,
       if (opt_refresh)
        dnf_context_set_cache_age (ctx, 0);
 
+      g_autofree gchar *solve_arch = find_solve_arch (argc, argv);
+      if (solve_arch)
+        {
+          dnf_context_set_arch (ctx, solve_arch);
+          setenv ("DNF_VAR_basearch", basearch_for_arch (solve_arch), 1);
+        }
+
       if (!dnf_context_setup (ctx, NULL, &error))
         goto out;
       DnfState *state = dnf_context_get_state (ctx);
@@ -713,6 +807,8 @@ main (int   argc,
 
 out:
   g_slist_free_full(cmds_with_subcmds, g_free);
+  g_slist_free_full(enable_disable_repos, g_free);
+  g_free(opt_forcearch_global);
 
   if (error != NULL)
     {

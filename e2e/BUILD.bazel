@@ -345,6 +345,7 @@ rpm_package(
 rpm_archive(
     name = "ol9_curl_archive",
     compression = "gzip",
+    forcearch = "x86_64",
     rpm2archive_tool = "//:rpm2archive",
     rpms = [":ol9_curl_package"],
 )
@@ -363,6 +364,7 @@ rpm_extract(
 rpm_mark(
     name = "ol9_marked_rpmdb",
     arch = "x86_64",
+    forcearch = "x86_64",
     packages = [
         "curl=7.76.1-40.el9_8.8",
     ],
