@@ -207,6 +207,8 @@ sh_test(
 rpm_archive(
     name = "tour_archive_zstd",
     compression = "zstd",
+    # the prebuilt rpm2archive predates zstd output, so build it from source here
+    rpm2archive_tool = "//:rpm2archive",
     rpms = ["@test_rpms//:tour"],
 )
 

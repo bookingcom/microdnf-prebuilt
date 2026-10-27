@@ -138,12 +138,12 @@ cp microdnf/BUILD.bazel "${PKG_DIR}/microdnf/BUILD.bazel"
 cp microdnf/private/*.bzl "${PKG_DIR}/microdnf/private/"
 cp microdnf/private/BUILD.bazel "${PKG_DIR}/microdnf/private/BUILD.bazel"
 
-# In packaged microdnf/BUILD.bazel, bind the rpm2archive and rpm2files aliases to prebuilt binary selects
+# In packaged microdnf/BUILD.bazel, bind rpm2files alias to prebuilt binary select
 python3 -c '
 path = "'"${PKG_DIR}"'/microdnf/BUILD.bazel"
 with open(path, "r") as f:
     content = f.read()
-for tool, source in (("rpm2archive", "//:rpm2archive"), ("rpm2files", "//rpm2files:rpm2files")):
+for tool, source in (("rpm2files", "//rpm2files:rpm2files"),):
     target = """alias(
     name = "%s",
     actual = "%s",

@@ -49,7 +49,10 @@ PLATFORM_CONSTRAINTS = {
 
 alias(
     name = "rpm2archive",
-    actual = "//:rpm2archive",
+    actual = select({
+        ":is_" + platform: "@rpm2archive_" + platform + "//file"
+        for platform in SUPPORTED_PLATFORMS
+    }),
     visibility = ["//visibility:public"],
 )
 
