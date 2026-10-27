@@ -83,6 +83,7 @@ Cross-compilation is supported for 4 platforms:
 2. **`rpm2archive`**: Standalone tool converting RPM package lists into deduplicated container layers.
 3. **`dnf_lock`**: Standalone dependency solver emitting JSON lockfiles.
 4. **`rpm2files`**: Standalone Go-based tool for extracting files from RPM packages.
+5. **`mark`**: Standalone tool resolving packages (and minimal dependencies) and importing RPM headers into an isolated SQLite `rpmdb`.
 
 ### Tool Naming Protocol
 - The dependency solver is named **`dnf_lock`** across the entire repository (`//:dnf_lock`, `//dnf:dnf_lock`, `@dnf_lock//:dnf_lock`).
@@ -159,7 +160,42 @@ When bumping or modifying a 3rdparty module under `bazel/3rdparty/modules/<modul
 
 ---
 
-## 7. Timezone & Communication Guidelines
+## 7. CLI Tool Design, Architecture Forcing & Memory Safety (PR #24 & PR #38 Learnings)
+
+### Mandatory Architecture Override (`--forcearch` & `--archlist`)
+> [!IMPORTANT]
+> **Every command, CLI tool, or Bazel rule added to the repository that resolves, queries, or operates on architecture-aware RPM packages or metadata MUST provide a way to force the target architecture.**
+
+- **Why Architecture Forcing Is Required**:
+  - Builds and lockfile/rpmdb generation frequently cross-target a foreign CPU architecture (e.g., solving or marking `x86_64` RPMs on an `arm64` macOS or Linux host).
+  - Filtering `HyQuery` by `--archlist` alone is **not sufficient**: `libdnf` / `libsolv` initializes its solver pool with the host architecture during `dnf_context_setup()`, causing the solver to reject foreign-architecture packages during `hy_goal_run_flags()`, and `$basearch` in `.repo` URLs defaults to the host CPU.
+- **Implementation Protocol for `libdnf`-Based Tools (`dnf_lock`, `mark`, `microdnf`)**:
+  1. **Expose `--forcearch=<arch>` and `--archlist=<arch,...>`** (with `--arch` supported as an alias where appropriate) on the CLI, and expose `forcearch` and `arch` attributes on the corresponding Bazel rules (`rpm_lock`, `rpm_mark`, `rpm_archive`, etc.).
+  2. **Default Solve Architecture**: If `--forcearch` is not explicitly passed, default the solve architecture to the first non-`noarch`/`src` entry in `--archlist` / `--arch`.
+  3. **Apply Before `dnf_context_setup()`**: Pre-parse `--forcearch` and `--archlist` / `--arch` before calling `dnf_context_setup(ctx, ...)` and set both:
+     - `dnf_context_set_arch(ctx, solve_arch)` so `libsolv` solves for the target architecture.
+     - `setenv("DNF_VAR_basearch", basearch_for_arch(solve_arch), 1)` (mapping `i?86` -> `i386`, `armv*hl` -> `armhfp`) so `$basearch` in repository configuration files expands to the target architecture.
+- **CLI Flag Consistency Across Tools**:
+  - `libdnf`-backed tools (`microdnf`, `dnf_lock`, `mark`) consistently support `--forcearch`, `--archlist` / `--arch`, `--config` / `--repo-config`, `--reposdir`, `--releasever`, `--installroot`, `--enablerepo`, `--disablerepo`, `--excludepkgs`, `--best` / `--nobest`, `--refresh`, and `--setopt=<opt>=<val>` (including `cachedir`, `reposdir`, `varsdir`, `module_platform_id`, `forcearch`, `excludepkgs`, and `<repo>.<option>`).
+  - `rpm2archive` supports `--forcearch` and `--archlist` / `--arch` to validate input RPM headers (`RPMTAG_ARCH`) against the expected target architecture.
+  - Dummy `GOptionEntry` tables used purely for `--help` output with `NULL` `arg_data` must pass only `{ argv[0], argv[in], NULL }` to `g_option_context_parse(help_ctx, ...)` so passing options alongside `--help` never dereferences a `NULL` `arg_data` pointer.
+
+### GLib / `libdnf` / `rpm` Ownership & Sanitizer Learnings (PR #24 & PR #38)
+- **`GOptionGroup` Ownership Transfer (Avoid Double-Unref / `heap-use-after-free`)**:
+  - `g_option_context_add_group()` and `g_option_context_set_main_group()` **take ownership** of the `GOptionGroup*` passed to them, and `g_option_context_free()` unreferences those groups when the context is freed.
+  - If a `GOptionGroup` is declared with `g_autoptr(GOptionGroup)`, you **must** transfer ownership via `g_steal_pointer(&group)` at every call site (e.g., `help_ctx`, `global_opt_ctx`, `subcmd_opt_ctx`), or use a plain `GOptionGroup*` pointer. Keeping the pointer in `g_autoptr` without `g_steal_pointer()` causes a double-unref (`heap-use-after-free` in `g_option_group_unref` under AddressSanitizer).
+- **`GPtrArray` Free Functions for Ref-Counted Objects (Avoid LeakSanitizer Failures)**:
+  - Whenever a helper creates a `GPtrArray*` and populates it with `g_object_ref()`'d objects (such as `DnfPackage*` in `select_one_pkg_for_nevra()`), construct the array with `g_ptr_array_new_full(size, g_object_unref)` or `g_ptr_array_new_with_free_func(g_object_unref)` rather than `g_ptr_array_sized_new()`.
+  - Without a free function attached at construction, callers holding the returned array in `g_autoptr(GPtrArray)` free only the array wrapper and leak every `DnfPackage` reference.
+- **`rpmfi` File Iterator Cleanup**:
+  - `rpmfiArchiveClose(fi)` only closes the underlying payload stream; always call `rpmfiFree(fi)` afterward to free the `rpmfi` structure and its archive reader.
+- **Target vs. Exec Configuration & Sanitizer Testing**:
+  - Bazel builds tool dependencies configured with `cfg = "exec"` using `-c opt`, which defines `NDEBUG` and compiles out `assert()` checks in `libdnf` and `libsolv`.
+  - Always test CLI binaries built in the **target** configuration as well (where assertions and sanitizers such as `ASan`, `LSan`, and `UBSan` are active) to catch assertion failures, use-after-free bugs, and memory leaks.
+
+---
+
+## 8. Timezone & Communication Guidelines
 
 - **Timezone**: All timestamps, dates, and build times presented in reports, summaries, or commit notes must be localized to the Amsterdam timezone (`Europe/Amsterdam`, CET/CEST, UTC+1 / UTC+2).
 - **File Links**: Always link to files and code symbols using GitHub-flavored markdown links (`[target](file:///path/to/target)`).
@@ -167,7 +203,7 @@ When bumping or modifying a 3rdparty module under `bazel/3rdparty/modules/<modul
 
 ---
 
-## 8. Local Customizations
+## 9. Local Customizations
 
 If `AGENTS.local.md` exists in the repository root, load and follow its instructions for user-specific overrides and configuration.
 

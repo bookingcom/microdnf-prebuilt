@@ -132,6 +132,8 @@ run_rpm2archive (int argc, char **argv, GError **error)
 {
   g_autofree gchar *opt_output = NULL;
   g_autofree gchar *opt_compression = NULL;
+  g_autofree gchar *opt_forcearch = NULL;
+  g_autofree gchar *opt_archlist = NULL;
   gboolean opt_nocompression = FALSE;
   gboolean opt_verbose = FALSE;
   g_auto(GStrv) opt_obsolete_rpms = NULL;
@@ -142,6 +144,9 @@ run_rpm2archive (int argc, char **argv, GError **error)
     { "output", 'o', 0, G_OPTION_ARG_STRING, &opt_output, "Output archive file path", "FILE" },
     { "nocompression", 'n', 0, G_OPTION_ARG_NONE, &opt_nocompression, "Create uncompressed tar archive", NULL },
     { "compression", 'C', 0, G_OPTION_ARG_STRING, &opt_compression, "Compression format: gzip, zstd, none, or auto", "FORMAT" },
+    { "forcearch", '\0', 0, G_OPTION_ARG_STRING, &opt_forcearch, "Verify input RPMs match this architecture (plus noarch)", "ARCH" },
+    { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, "Verify input RPMs match allowed architectures", "ARCH,..." },
+    { "arch", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, "Verify input RPMs match allowed architectures", "ARCH,..." },
     { "verbose", 'v', 0, G_OPTION_ARG_NONE, &opt_verbose, "Verbose logging", NULL },
     { "obsolete-rpm", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_obsolete_rpms, "RPM package(s) being obsoleted/removed (adds OCI whiteouts for deleted files)", "RPM..." },
     { "obsolete", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_obsolete_rpms, "Alias for --obsolete-rpm", "RPM..." },
@@ -154,6 +159,17 @@ run_rpm2archive (int argc, char **argv, GError **error)
   g_option_context_add_main_entries (opt_ctx, entries, NULL);
   if (!g_option_context_parse (opt_ctx, &argc, &argv, error))
     return 1;
+
+  g_auto(GStrv) allowed_archs = NULL;
+  if (opt_forcearch && *opt_forcearch)
+    {
+      g_autofree gchar *spec = g_strdup_printf ("%s,noarch", opt_forcearch);
+      allowed_archs = g_strsplit_set (spec, ", ", -1);
+    }
+  else if (opt_archlist && *opt_archlist)
+    {
+      allowed_archs = g_strsplit_set (opt_archlist, ", ", -1);
+    }
 
   gboolean has_files = (opt_files && opt_files[0]);
   gboolean has_obsolete = (opt_obsolete_rpms && opt_obsolete_rpms[0]);
@@ -210,6 +226,22 @@ run_rpm2archive (int argc, char **argv, GError **error)
           Fclose (fdi);
           rpmtsFree (ts);
           return 1;
+        }
+
+      if (allowed_archs)
+        {
+          const char *pkg_arch = headerGetString (h, RPMTAG_ARCH);
+          if (pkg_arch && !g_strv_contains ((const gchar * const *)allowed_archs, pkg_arch) &&
+              g_strcmp0 (pkg_arch, "noarch") != 0)
+            {
+              g_set_error (error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                           "RPM '%s' has architecture '%s', which does not match forced architecture",
+                           fn, pkg_arch);
+              headerFree (h);
+              Fclose (fdi);
+              rpmtsFree (ts);
+              return 1;
+            }
         }
 
       rpmfiles files = rpmfilesNew (NULL, h, 0, RPMFI_KEEPHEADER);
