@@ -68,6 +68,13 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+# Default lock_tool of rpm_lock(backend = "libdnf"). Packaged releases bind it to the prebuilt binary (package_release.sh).
+alias(
+    name = "dnf_lock",
+    actual = "//:dnf_lock",
+    visibility = ["//visibility:public"],
+)
+
 # Host toolchain implementation selects the prebuilt binary matching host platform
 microdnf_toolchain(
     name = "toolchain_impl_host",

@@ -21,12 +21,12 @@ def lock_parity(name, out, **kwargs):
       out: lockfile name of the libdnf target; the twin writes <name>_dnf5.lock.json.
       **kwargs: rpm_lock attributes shared by both targets.
     """
-    rpm_lock(name = name, out = out, **kwargs)
+    rpm_lock(name = name, out = out, backend = "libdnf", **kwargs)
+
+    # No backend and dnf5_tool: the twin runs the defaults of rpm_lock, so the parity gate covers them.
     rpm_lock(
         name = name + "_dnf5",
         out = name + "_dnf5.lock.json",
-        backend = "dnf5",
-        dnf5_tool = "//:dnf5",
         **kwargs
     )
     _normalized(name + "_norm", out)

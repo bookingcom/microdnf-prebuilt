@@ -268,7 +268,8 @@ echo "Lockfile updated at: ${DEST}"
 
 rpm_lock = rule(
     implementation = _rpm_lock_impl,
-    doc = "Generates a hermetic RPM JSON lockfile for specified packages and dependencies.",
+    doc = "Generates a hermetic RPM JSON lockfile for specified packages and dependencies, solved by `dnf5 lock` " +
+          "(backend = \"dnf5\", the default) or dnf_lock (backend = \"libdnf\").",
     attrs = {
         "arch": attr.string_list(
             mandatory = True,
@@ -276,11 +277,13 @@ rpm_lock = rule(
             doc = "Mandatory target CPU architecture list (e.g. ['x86_64', 'noarch']).",
         ),
         "backend": attr.string(
-            default = "libdnf",
+            default = "dnf5",
             values = ["libdnf", "dnf5"],
-            doc = "Solver behind the lockfile: dnf_lock (libdnf) or `dnf5 lock` (needs dnf5_tool). The lockfiles are the same.",
+            doc = "Solver behind the lockfile: `dnf5 lock` (dnf5_tool, the default) or dnf_lock (libdnf, lock_tool; " +
+                  "deprecated, kept for one release). The lockfiles are the same.",
         ),
         "dnf5_tool": attr.label(
+            default = Label("//microdnf:dnf5"),
             executable = True,
             cfg = "exec",
             doc = "dnf5 executable (with the lock command) for backend = \"dnf5\".",
@@ -306,10 +309,10 @@ rpm_lock = rule(
             doc = "Ordered list of lock files from previous layers.",
         ),
         "lock_tool": attr.label(
-            default = Label("//:dnf_lock"),
+            default = Label("//microdnf:dnf_lock"),
             executable = True,
             cfg = "exec",
-            doc = "Underlying lock tool executable.",
+            doc = "dnf_lock executable for backend = \"libdnf\".",
         ),
         "module_enable": attr.string_list(
             default = [],

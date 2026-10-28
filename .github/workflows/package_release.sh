@@ -143,12 +143,12 @@ cp microdnf/BUILD.bazel "${PKG_DIR}/microdnf/BUILD.bazel"
 cp microdnf/private/*.bzl "${PKG_DIR}/microdnf/private/"
 cp microdnf/private/BUILD.bazel "${PKG_DIR}/microdnf/private/BUILD.bazel"
 
-# In packaged microdnf/BUILD.bazel, bind rpm2files and dnf5 aliases to prebuilt binary select
+# In packaged microdnf/BUILD.bazel, bind the rpm2files, dnf5 and dnf_lock aliases to prebuilt binary select
 python3 -c '
 path = "'"${PKG_DIR}"'/microdnf/BUILD.bazel"
 with open(path, "r") as f:
     content = f.read()
-for tool, source in (("rpm2files", "//rpm2files:rpm2files"), ("dnf5", "//dnf:dnf5")):
+for tool, source in (("rpm2files", "//rpm2files:rpm2files"), ("dnf5", "//:dnf5"), ("dnf_lock", "//:dnf_lock")):
     target = """alias(
     name = "%s",
     actual = "%s",
@@ -162,8 +162,9 @@ for tool, source in (("rpm2files", "//rpm2files:rpm2files"), ("dnf5", "//dnf:dnf
     }),
     visibility = ["//visibility:public"],
 )""" % (tool, tool)
-    if target in content:
-        content = content.replace(target, replacement)
+    if target not in content:
+        raise SystemExit("microdnf/BUILD.bazel has no %s alias to bind" % tool)
+    content = content.replace(target, replacement)
 with open(path, "w") as f:
     f.write(content)
 '
