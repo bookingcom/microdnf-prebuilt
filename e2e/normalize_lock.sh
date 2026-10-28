@@ -3,6 +3,8 @@
 # The lockfile url of a repo-local package is the absolute path of the action that wrote it, which differs per
 # action and per sandbox implementation (darwin-sandbox/<N>, bazel-sandbox.<hash>/linux-sandbox/<N>, or the
 # output base without a sandbox; slashes JSON-escaped). Replace everything up to execroot/ so that the lockfiles
-# of two separate actions can be compared byte for byte.
+# of two separate actions can be compared byte for byte. The output configuration directory (darwin_arm64-fastbuild,
+# k8-fastbuild-ST-<hash>, ...) differs per host and flags, so it is replaced too: the result also equals the golden files.
 set -euo pipefail
-sed -E 's#"file:[^"]*(\\?/)execroot(\\?/)#"file:@EXECROOT@\2#g' "$1" >"$2"
+sed -E -e 's#"file:[^"]*(\\?/)execroot(\\?/)#"file:@EXECROOT@\2#g' \
+  -e 's#bazel-out(\\?/)[^\\/"]+(\\?/)bin#bazel-out\1@CONFIG@\2bin#g' "$1" >"$2"
