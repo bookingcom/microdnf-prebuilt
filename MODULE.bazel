@@ -116,6 +116,7 @@ bazel_dep(name = "libsolv", version = "0.7.41.bcr.1", dev_dependency = True)
 bazel_dep(name = "librepo", version = "1.21.2.bcr.1", dev_dependency = True)
 bazel_dep(name = "libmodulemd", version = "2.15.0.bcr.15", dev_dependency = True)
 bazel_dep(name = "libdnf", version = "0.74.0.bcr.28", dev_dependency = True)
+bazel_dep(name = "dnf5", version = "5.4.6.0.bcr.1", dev_dependency = True, repo_name = "dnf5_src")
 
 # Enforce 1.51.0.bcr.5 across transitive 3rdparty dependencies (libassuan, librepo, gpgme)
 single_version_override(
