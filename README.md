@@ -77,6 +77,10 @@ Targets that relied on the old default solve with dnf5 now; set `backend = "libd
 held to byte-identical lockfiles (whole-lockfile `diff_test`s in `//e2e:lock_parity_tests`); `exclude` becomes
 `dnf5 lock --prune`. The only known difference is wording: dnf5 words the `--best`/`--no-best` conflict error differently.
 
+`rpm_mark` follows the same scheme: `backend = "dnf5"` (default) records the packages with `dnf5 rpmdb-mark` (`dnf5_tool`,
+default `//microdnf:dnf5`); `backend = "libdnf"` keeps the deprecated `mark` tool (`mark_tool`) for one release. Both write
+the same packages into `var/lib/rpm/rpmdb.sqlite` (`//e2e:oracle_linux_curl_mark_dnf5_test` compares them).
+
 ### 3. Hermetic Host Portability
 - Automatic hermetic fallback configuration when `/usr/lib/rpm/rpmrc` is absent on host systems.
 - Unprivileged user fallback redirecting caches to `~/.cache/microdnf` and repos to a fallback directory when `/etc/yum.repos.d` is missing.

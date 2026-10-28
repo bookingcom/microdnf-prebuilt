@@ -646,6 +646,7 @@ rpm_extract(
 rpm_mark(
     name = "ol9_marked_rpmdb",
     arch = "x86_64",
+    backend = "libdnf",
     packages = [
         "curl=7.76.1-40.el9_8.8",
     ],
@@ -674,12 +675,10 @@ sh_test(
     ] + _SANITIZER_DATA,
 )
 
-# The same with dnf5: rpm_mark(backend = "dnf5") and `dnf5 rpmdb-mark`, whose rpmdb must hold the libdnf one's packages.
+# The same with the defaults of rpm_mark (dnf5 and `dnf5 rpmdb-mark`), whose rpmdb must hold the libdnf one's packages.
 rpm_mark(
     name = "ol9_marked_rpmdb_dnf5",
     arch = "x86_64",
-    backend = "dnf5",
-    dnf5_tool = "//:dnf5",
     packages = [
         "curl=7.76.1-40.el9_8.8",
     ],

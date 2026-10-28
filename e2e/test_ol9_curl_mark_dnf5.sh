@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The dnf5 twin of test_ol9_curl_mark.sh: rpm_mark(backend = "dnf5") and the standalone `dnf5 rpmdb-mark` write an rpmdb
+# The dnf5 twin of test_ol9_curl_mark.sh: rpm_mark with its dnf5 default and the standalone `dnf5 rpmdb-mark` write an rpmdb
 # with curl and its dependency, and that rpmdb holds the same packages as the one the libdnf mark tool wrote.
 set -euo pipefail
 
@@ -28,7 +28,7 @@ for table in ('Name', 'Sha1header', 'Providename'):
 " "$1" | sort
 }
 
-echo "=== 2. rpm_mark(backend = dnf5) generated an rpmdb with curl and libcurl ==="
+echo "=== 2. rpm_mark (dnf5 default) generated an rpmdb with curl and libcurl ==="
 SQLITE_DB="${DNF5_RPMDB_DIR}/var/lib/rpm/rpmdb.sqlite"
 test -f "${SQLITE_DB}"
 keys "${SQLITE_DB}" | grep -qx 'Name curl'

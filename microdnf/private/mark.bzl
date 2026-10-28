@@ -115,11 +115,13 @@ rpm_mark = rule(
     implementation = _rpm_mark_impl,
     attrs = {
         "backend": attr.string(
-            default = "libdnf",
+            default = "dnf5",
             values = ["libdnf", "dnf5"],
-            doc = "Tool behind the rpmdb: mark (libdnf) or `dnf5 rpmdb-mark` (needs dnf5_tool). The rpmdbs hold the same packages.",
+            doc = "Tool behind the rpmdb: `dnf5 rpmdb-mark` (dnf5_tool, the default) or mark (libdnf, mark_tool; " +
+                  "deprecated, kept for one release). The rpmdbs hold the same packages.",
         ),
         "dnf5_tool": attr.label(
+            default = Label("//microdnf:dnf5"),
             executable = True,
             cfg = "exec",
             doc = "dnf5 executable (with the rpmdb-mark command) for backend = \"dnf5\".",
@@ -153,7 +155,7 @@ rpm_mark = rule(
             default = Label("//:mark"),
             executable = True,
             cfg = "exec",
-            doc = "Underlying mark tool executable.",
+            doc = "mark executable for backend = \"libdnf\".",
         ),
     },
 )
