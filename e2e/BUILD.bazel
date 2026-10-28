@@ -1,4 +1,5 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_test", "default_test_runner")
+load("@rules_cc//cc:defs.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//microdnf:defs.bzl", "dnf_config", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
 load("//microdnf/private:package.bzl", "rpm_package")
@@ -47,6 +48,17 @@ sh_test(
         "//e2e/testdata:ol9_repo_files",
         "//e2e/testdata:test_repo_files",
     ] + _SANITIZER_DATA,
+)
+
+# Module spec parsing of the dnf5 build: its NSVCAP regexes were patched from POSIX extended (aborts on libc++) to ECMAScript.
+cc_test(
+    name = "nsvcap_test",
+    srcs = ["nsvcap_test.cc"],
+    copts = ["-std=c++20"],
+    deps = [
+        "@dnf5_src//:libdnf5_core",
+        "@googletest//:gtest_main",
+    ],
 )
 
 # dnf_config renders dnf.conf and the .repo file; the preamble makes dnf5 read only those.
