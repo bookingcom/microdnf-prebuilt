@@ -245,6 +245,34 @@ sh_test(
     shard_count = 6,
 )
 
+dnf_config(
+    name = "features_dnf_config",
+    module_platform_id = "platform:el9",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:features.repo"],
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+# The same cases through `dnf5 lock`.
+sh_test(
+    name = "lock_features_dnf5_test",
+    srcs = ["test_lock_features.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(location //e2e/testdata:features-repo/repodata/repomd.xml)",
+        "dnf5",
+        "$(rootpath :features_dnf_config)",
+    ],
+    data = [
+        ":dnf5_test_lib",
+        ":features_dnf_config",
+        "//:dnf5",
+        "//e2e/testdata:features-repo/repodata/repomd.xml",
+        "//e2e/testdata:features_repo_files",
+    ] + _SANITIZER_DATA,
+    shard_count = 6,
+)
+
 # The same options through the rpm_lock attributes
 lock_parity(
     name = "attrs_excludepkgs_lock",
@@ -522,6 +550,36 @@ sh_test(
     data = [
         ":test_generated_lock.lock.json",
         "//:dnf_lock",
+        "//e2e/testdata:repo/repodata/repomd.xml",
+        "//e2e/testdata:test.repo",
+        "//e2e/testdata:test_repo_files",
+    ] + _SANITIZER_DATA,
+)
+
+dnf_config(
+    name = "test_dnf_config",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:test.repo"],
+    repo_files = ["//e2e/testdata:test_repo_files"],
+)
+
+# The same case through `dnf5 lock`.
+sh_test(
+    name = "lock_direct_dnf5_test",
+    srcs = ["test_lock_direct.sh"],
+    args = [
+        "$(rootpath //:dnf5)",
+        "$(rootpath //e2e/testdata:test.repo)",
+        "$(rootpath //e2e/testdata:repo/repodata/repomd.xml)",
+        "$(rootpath :test_generated_lock.lock.json)",
+        "dnf5",
+        "$(rootpath :test_dnf_config)",
+    ],
+    data = [
+        ":dnf5_test_lib",
+        ":test_dnf_config",
+        ":test_generated_lock.lock.json",
+        "//:dnf5",
         "//e2e/testdata:repo/repodata/repomd.xml",
         "//e2e/testdata:test.repo",
         "//e2e/testdata:test_repo_files",

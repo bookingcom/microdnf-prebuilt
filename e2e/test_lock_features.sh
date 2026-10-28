@@ -2,10 +2,16 @@
 # dnf_lock option tests against the synthetic "features" repository:
 # --excludepkgs, --module-enable, --best/--nobest, --forcearch and equal-priority
 # repos that carry the same packages, and weak dependencies.
+# Args: <dnf_lock> <repomd.xml>
+#   or: <dnf5> <repomd.xml> dnf5 <dnf.conf of a dnf_config>
+# The cases are written in dnf_lock's flags; for dnf5 they are translated (see run_lock_dnf5).
 set -euo pipefail
 
 DNF_LOCK="$1"
 REPOMD="$2"          # .../features-repo/repodata/repomd.xml
+BACKEND="${3:-libdnf}"
+DNF_CONF="${4:-}"
+if [ "${BACKEND}" = dnf5 ]; then source "$(dirname "$0")/dnf5_lib.sh"; fi
 
 abspath() { (cd "$(dirname "$1")" && echo "$(pwd -P)/$(basename "$1")"); }
 REPO_DIR="$(dirname "$(dirname "$(abspath "${REPOMD}")")")"
@@ -32,7 +38,38 @@ FAILURES=0
 OUT="${WORK}/out.json"
 ERR="${WORK}/err.txt"
 
+# `dnf5 lock` under the dnf_config preamble. dnf_lock's flags map as follows: --excludepkgs is dnf5's --exclude,
+# dnf_lock's --exclude is `lock --prune`, --nobest is --no-best, --reposdir is --setopt=reposdir=, and the solve
+# architecture (--forcearch, else the first non-noarch of ARCHLIST) is --forcearch.
+run_lock_dnf5() {
+  local globals=() lockargs=() forcearch="" a
+  for a in "$@"; do
+    case "${a}" in
+      --excludepkgs=*) globals+=(--exclude="${a#*=}") ;;
+      --exclude=*) lockargs+=(--prune="${a#*=}") ;;
+      --nobest) globals+=(--no-best) ;;
+      --best | --setopt=* | --setvar=*) globals+=("${a}") ;;
+      --reposdir=*) globals+=(--setopt=reposdir="${a#*=}") ;;
+      --forcearch=*) forcearch="${a#*=}" ;;
+      *) lockargs+=("${a}") ;;
+    esac
+  done
+  if [ -z "${forcearch}" ]; then
+    forcearch="$(tr , '\n' <<<"${ARCHLIST}" | grep -vx noarch | head -n 1)"
+  fi
+  rm -rf "${WORK}/dnf5tmp"
+  mkdir -p "${WORK}/dnf5tmp/root"
+  dnf5_preamble "${DNF_CONF}" "${REPO_DIR}" "${WORK}/dnf5tmp"
+  # ${a[@]+"${a[@]}"}: an empty array is unbound under set -u in bash 3.2 (macOS).
+  "${DNF_LOCK}" "${PREAMBLE[@]}" --forcearch="${forcearch}" ${globals[@]+"${globals[@]}"} \
+    lock --archlist="${ARCHLIST}" -o "${OUT}" ${lockargs[@]+"${lockargs[@]}"} 2>"${ERR}"
+}
+
 run_lock() {
+  if [ "${BACKEND}" = dnf5 ]; then
+    run_lock_dnf5 "$@"
+    return
+  fi
   "${DNF_LOCK}" --reposdir="${REPOSDIR}" --setopt=cachedir="${WORK}/cache" \
     --releasever=9 --archlist="${ARCHLIST}" -o "${OUT}" "$@" 2>"${ERR}"
 }
@@ -88,7 +125,10 @@ section_best() {
   expect_lock "--setopt=best=False falls back too" "bestapp-1.0-1.noarch" bestapp --setopt=best=False
   expect_error "--nobest keeps a pinned version (no fallback to bestapp-1.0)" \
     "missing-lib" bestapp-2.0-1.noarch --nobest
-  expect_error "--best and --nobest conflict" "Argument --nobest is not allowed with argument --best" \
+  # Only the wording differs: dnf5's parser names the flag --no-best.
+  local conflict="Argument --nobest is not allowed with argument --best"
+  if [ "${BACKEND}" = dnf5 ]; then conflict='"--no-best" not allowed together with named argument "--best"'; fi
+  expect_error "--best and --nobest conflict" "${conflict}" \
     bestapp --best --nobest
   expect_lock "--nobest still takes the newest installable candidate" \
     "${CA_NEW}" certuser --nobest
