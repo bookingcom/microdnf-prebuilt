@@ -57,6 +57,7 @@ cc_test(
         "@dnf5_src//:libdnf5_core",
         "@googletest//:gtest_main",
     ],
+    data = _SANITIZER_DATA,
 )
 
 # dnf_config renders dnf.conf and the .repo file; the preamble makes dnf5 read only those.
