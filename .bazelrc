@@ -73,7 +73,7 @@ common:ci --ui_event_filters=-warning
 test:ci --test_output=errors
 test:ci --test_summary=terse
 
-# AddressSanitizer + LeakSanitizer probe (dnf_lock e2e). Applies to every C dep built from source.
+# AddressSanitizer + LeakSanitizer probe (lock e2e). Applies to every C dep built from source.
 build:asan --@llvm//config:asan=true
 build:asan --@llvm//config:ubsan=true
 # GLib/GObject cast every class_init/base_init callback to GBaseInitFunc & co; clang's -fsanitize=function

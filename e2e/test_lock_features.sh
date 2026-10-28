@@ -3,7 +3,7 @@
 # --excludepkgs, --module-enable, --best/--nobest, --forcearch and equal-priority
 # repos that carry the same packages, and weak dependencies.
 # Args: <dnf5> <repomd.xml> <dnf.conf of a dnf_config>
-# The cases are written in the flags of the former dnf_lock tool; they are translated (see run_lock).
+# The cases are written as the flags of the removed dnf_lock tool; run_lock translates them to dnf5 options.
 set -euo pipefail
 
 DNF5="$1"
@@ -52,8 +52,8 @@ run_lock() {
       *) lockargs+=("${a}") ;;
     esac
   done
-  # A section that sets REPOSDIR (the archrepo and duplicate-repo cases) swaps the repositories, as dnf_lock's
-  # --reposdir did; the default one is the features repository of the dnf_config.
+  # A section that sets REPOSDIR (the archrepo and duplicate-repo cases) swaps the repositories, like the
+  # former --reposdir; the default one is the features repository of the dnf_config.
   if [ "${REPOSDIR}" != "${WORK}/repos.d" ]; then globals+=(--setopt=reposdir="${REPOSDIR}"); fi
   if [ -z "${forcearch}" ]; then
     forcearch="$(tr , '\n' <<<"${ARCHLIST}" | grep -vx noarch | head -n 1)"

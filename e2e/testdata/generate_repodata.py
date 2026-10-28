@@ -161,7 +161,7 @@ UPDATEINFO_XML = b"""<?xml version="1.0" ?>
 </updates>
 """
 
-# Synthetic metadata-only repository for the dnf_lock feature tests
+# Synthetic metadata-only repository for the dnf5 lock feature tests
 # (forcearch, excludepkgs, modules, best/nobest, weak dependencies).
 # Each tuple: (name, epoch, version, release, arch, [required package names]).
 FEATURE_PACKAGES = [
@@ -211,7 +211,7 @@ data:
   context: e2e00084
   arch: x86_64
   summary: MySQL Module
-  description: MySQL 8.4 stream for the dnf_lock e2e tests.
+  description: MySQL 8.4 stream for the dnf5 lock e2e tests.
   license:
     module:
     - MIT

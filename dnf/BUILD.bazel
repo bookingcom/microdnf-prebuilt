@@ -25,7 +25,6 @@ UPSTREAM_PLUGINS = [
 
 LOCAL_PLUGINS = [
     "rpm2archive",
-    "lock",
 ]
 
 [
@@ -63,22 +62,6 @@ COMMON_COPTS = [
     "-Werror=main",
 ]
 
-# C wrapper for libdnf C++-only API used by lock.c
-cc_library(
-    name = "lock_repo",
-    srcs = ["lock-repo.cpp"],
-    hdrs = ["lock-repo.h"],
-    copts = [
-        "-std=c++17",
-        "-DLIBDNF_UNSTABLE_API",
-    ],
-    includes = ["."],
-    deps = [
-        "@glib//:glib",
-        "@libdnf//:libdnf",
-    ],
-)
-
 genrule(
     name = "copy_upstream_core",
     srcs = [
@@ -101,8 +84,6 @@ cc_binary(
     srcs = [
         ":copy_upstream_core",
         "dnf-main.c",
-        "lock.c",
-        "lock.h",
         "rpm2archive.c",
         "rpm2archive.h",
     ] + [
@@ -134,15 +115,12 @@ cc_binary(
     includes = ["."],
     linkopts = ["-rdynamic"],
     deps = [
-        ":lock_repo",
         "@glib//:gio",
         "@glib//:glib",
         "@glib//:gobject",
-        "@json-c//:json-c",
         "@libarchive//libarchive:archive",
         "@libdnf//:libdnf",
         "@libpeas//:libpeas",
-        "@libsolv//:libsolv",
         "@rpm//:rpm",
         "@rpm//:rpmio",
         "@smartcols//:smartcols",
@@ -202,107 +180,6 @@ filegroup(
         for platform in SUPPORTED_PLATFORMS
     ],
     tags = ["manual"],
-)
-
-cc_binary(
-    name = "dnf_lock",
-    srcs = [
-        ":copy_upstream_core",
-        "lock.c",
-        "lock.h",
-        "lock-main.c",
-        "solve-arch.h",
-    ],
-    copts = COMMON_COPTS,
-    defines = [
-        'PACKAGE_LIBDIR=\\"/usr/lib64/dnf\\"',
-        'PACKAGE_DATADIR=\\"/usr/share/dnf\\"',
-        'BUILDDIR=\\"dnf\\"',
-        'SRCDIR=\\"dnf\\"',
-    ],
-    includes = ["."],
-    deps = [
-        ":lock_repo",
-        "@glib//:gio",
-        "@glib//:glib",
-        "@glib//:gobject",
-        "@json-c//:json-c",
-        "@libdnf//:libdnf",
-        "@libsolv//:libsolv",
-        "@rpm//:rpm",
-        "@smartcols//:smartcols",
-    ],
-)
-
-[
-    platform_transition_binary(
-        name = "dnf_lock_" + platform,
-        binary = ":dnf_lock",
-        target_platform = "//bazel:" + platform,
-        tags = ["manual"],
-    )
-    for platform in SUPPORTED_PLATFORMS
-]
-
-filegroup(
-    name = "dnf_lock_all",
-    srcs = [
-        ":dnf_lock_" + platform
-        for platform in SUPPORTED_PLATFORMS
-    ],
-    tags = ["manual"],
-)
-
-cc_binary(
-    name = "mark",
-    srcs = [
-        ":copy_upstream_core",
-        "mark.c",
-        "mark.h",
-        "mark-main.c",
-        "solve-arch.h",
-    ],
-    copts = COMMON_COPTS,
-    defines = [
-        'PACKAGE_LIBDIR=\\"/usr/lib64/dnf\\"',
-        'PACKAGE_DATADIR=\\"/usr/share/dnf\\"',
-        'BUILDDIR=\\"dnf\\"',
-        'SRCDIR=\\"dnf\\"',
-    ],
-    includes = ["."],
-    deps = [
-        "@glib//:gio",
-        "@glib//:glib",
-        "@glib//:gobject",
-        "@json-c//:json-c",
-        "@libdnf//:libdnf",
-        "@libsolv//:libsolv",
-        "@rpm//:rpm",
-        "@rpm//:rpmio",
-        "@smartcols//:smartcols",
-    ],
-)
-
-[
-    platform_transition_binary(
-        name = "mark_" + platform,
-        binary = ":mark",
-        target_platform = "//bazel:" + platform,
-    )
-    for platform in SUPPORTED_PLATFORMS
-]
-
-filegroup(
-    name = "mark_all",
-    srcs = [
-        ":mark_" + platform
-        for platform in SUPPORTED_PLATFORMS
-    ],
-)
-
-alias(
-    name = "rpmdb-mark",
-    actual = ":mark",
 )
 
 [

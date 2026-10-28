@@ -84,7 +84,7 @@ std::vector<Package> pick_one_per_name_arch(const std::vector<Package> & pkgs) {
 }
 
 // One package per NEVRA, in the iteration order of a GLib hash table keyed by NEVRA. That is the order of the
-// lockfile's "packages", and the order dnf_lock produces.
+// lockfile's "packages", and the order the lockfile has always had.
 std::vector<Package> one_per_nevra(const std::vector<Package> & pkgs) {
     std::deque<std::string> nevras;
     GHashTable * by_nevra = g_hash_table_new(g_str_hash, g_str_equal);

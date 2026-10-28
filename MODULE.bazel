@@ -210,11 +210,6 @@ use_repo(microdnf, "microdnf_src")
 microdnf_prebuilt = use_extension("//microdnf:extensions.bzl", "microdnf_prebuilt_extension")
 use_repo(
     microdnf_prebuilt,
-    "dnf_lock",
-    "dnf_lock_linux_amd64",
-    "dnf_lock_linux_arm64",
-    "dnf_lock_osx_amd64",
-    "dnf_lock_osx_arm64",
     "microdnf",
     "microdnf_linux_amd64",
     "microdnf_linux_arm64",

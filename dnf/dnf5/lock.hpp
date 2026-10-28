@@ -1,5 +1,4 @@
-// The `lock` command of dnf5: resolves packages into a JSON lockfile, as the libdnf-based dnf_lock does. Its output
-// format is described in dnf/lock.c; this is a port of the same behaviour onto libdnf5, linked into the dnf5 binary.
+// The `lock` command of dnf5: resolves packages into a JSON lockfile. It is linked into the dnf5 binary.
 
 #ifndef DNF_DNF5_LOCK_HPP
 #define DNF_DNF5_LOCK_HPP
@@ -23,9 +22,9 @@ public:
 private:
     /// Lockfile to write; standard output when empty.
     std::string output;
-    /// Architectures a package may have; dnf_lock's --archlist.
+    /// Architectures a package may have; the --archlist of the removed dnf_lock.
     std::vector<std::string> archlist;
-    /// Packages to prune from the dependency tree; dnf_lock's --exclude (dnf5 has a global --exclude of its own).
+    /// Packages to prune from the dependency tree; the --exclude of the removed dnf_lock (dnf5 has a global --exclude of its own).
     std::vector<std::string> prune;
     std::vector<std::string> module_enable;
     /// Lockfiles of the layers below, in order.

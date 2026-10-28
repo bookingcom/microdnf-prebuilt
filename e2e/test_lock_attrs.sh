@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rpm_lock attributes excludepkgs, module_enable, module_platform_id, nobest, install_weak_deps and forcearch
-# reach dnf_lock: each lockfile resolves differently from the defaults.
+# reach dnf5 lock: each lockfile resolves differently from the defaults.
 set -euo pipefail
 
 python3 -c '

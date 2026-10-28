@@ -392,44 +392,12 @@
     },
     "//microdnf:extensions.bzl%microdnf_prebuilt_extension": {
       "general": {
-        "bzlTransitiveDigest": "jc/7BKd52EBrGC3V84guf/ZS18iYCkTQmtCTmfaD3oE=",
+        "bzlTransitiveDigest": "JmvUXSBe5XNV38266ucG9cL7dG0WqrjpX5BE4sSulsc=",
         "usagesDigest": "nYgae9k7YGOJIWsCDVZVB+ansr24iSVSrz8bRTgt+LQ=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
         ],
         "generatedRepoSpecs": {
-          "dnf_lock_linux_amd64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_linux_amd64",
-              "integrity": "sha256-DS9IKJQGwBfvMWwxqOx9CaZkU8G03ISaansnbrlj45g=",
-              "executable": true
-            }
-          },
-          "dnf_lock_linux_arm64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_linux_arm64",
-              "integrity": "sha256-l8d9MgIKXR2uNMCN9Zn0+L9xeBUliNORxQE/C9Ulw9E=",
-              "executable": true
-            }
-          },
-          "dnf_lock_osx_amd64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_osx_amd64",
-              "integrity": "sha256-CeUC3dKvDi8OSP5nTVjqw+4rMEkPqVtLWdiLLJogE6o=",
-              "executable": true
-            }
-          },
-          "dnf_lock_osx_arm64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_osx_arm64",
-              "integrity": "sha256-2ate0QSXhzwbouVV7SLLTezmEIB1xQYKeWw7Jb00hgQ=",
-              "executable": true
-            }
-          },
           "microdnf_linux_amd64": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
@@ -502,10 +470,6 @@
             "repoRuleId": "@@//microdnf/private:extensions.bzl%rpm2archive_host_alias_repo",
             "attributes": {}
           },
-          "dnf_lock": {
-            "repoRuleId": "@@//microdnf/private:extensions.bzl%dnf_lock_host_alias_repo",
-            "attributes": {}
-          },
           "rpm2files": {
             "repoRuleId": "@@//microdnf/private:extensions.bzl%rpm2files_host_alias_repo",
             "attributes": {}
@@ -519,7 +483,7 @@
     },
     "//microdnf:extensions.bzl%rpm": {
       "general": {
-        "bzlTransitiveDigest": "jc/7BKd52EBrGC3V84guf/ZS18iYCkTQmtCTmfaD3oE=",
+        "bzlTransitiveDigest": "JmvUXSBe5XNV38266ucG9cL7dG0WqrjpX5BE4sSulsc=",
         "usagesDigest": "G4xDQwbT+beGt4/2nChyemszdh5PPOvpdhGUg3vPKsY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
