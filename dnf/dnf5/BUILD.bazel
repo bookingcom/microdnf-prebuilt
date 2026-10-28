@@ -25,5 +25,7 @@ cc_library(
         "@dnf5_src//:headers",
         "@dnf5_src//:libdnf5",
         "@dnf5_src//:libdnf5-cli",
+        "@glib//:glib",
+        "@json-c//:json-c",
     ],
 )
