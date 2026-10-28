@@ -80,6 +80,25 @@ sh_test(
     ] + _SANITIZER_DATA,
 )
 
+# dnf5's effective configuration under the preamble holds no host path and equals the golden file.
+# To update it, copy dnf5_config_golden.txt from the test's undeclared outputs (bazel-testlogs/.../test.outputs).
+sh_test(
+    name = "dnf5_config_golden_test",
+    srcs = ["test_dnf5_config_golden.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
+        "e2e/testdata/ol9_repo",
+        "$(rootpath dnf5_config_golden.txt)",
+    ],
+    data = [
+        "dnf5_config_golden.txt",
+        ":dnf5_test_lib",
+        ":ol9_dnf_config",
+        "//:dnf5",
+    ] + _SANITIZER_DATA,
+)
+
 # Step 2 test: Lockfile generation with RPM exclusion
 rpm_lock(
     name = "test_generated_lock",
