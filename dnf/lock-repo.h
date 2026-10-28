@@ -1,11 +1,12 @@
 /* dnf/lock-repo.h
  *
- * C access to libdnf's C++-only repo attachment, used by lock.c.
+ * C access to libdnf's C++-only repo attachment and modular filtering, used by lock.c.
  */
 
 #pragma once
 
 #include <glib.h>
+#include <libdnf/libdnf.h>
 #include <libdnf/dnf-sack.h>
 #include <solv/pool.h>
 #include <solv/repo.h>
@@ -22,5 +23,9 @@ Repo *lock_repo_create (Pool *pool, const char *name);
  * whatprovides index and the considered map (sized by pool->nsolvables)
  * before the next query or solve. */
 void lock_sack_repos_changed (DnfSack *sack);
+
+/* Recomputes modular filtering after streams were enabled in the sack's module
+ * container, without reloading module state from disk. */
+gboolean lock_recompute_modular_filtering (DnfContext *ctx, GError **error);
 
 G_END_DECLS
