@@ -81,29 +81,26 @@ Cross-compilation is supported for 4 platforms:
 ### Tools Built
 1. **`microdnf`**: Standalone multi-command package manager.
 2. **`rpm2archive`**: Standalone tool converting RPM package lists into deduplicated container layers.
-3. **`dnf_lock`**: Standalone dependency solver emitting JSON lockfiles.
-4. **`rpm2files`**: Standalone Go-based tool for extracting files from RPM packages.
-5. **`dnf5`**: Next-generation standalone DNF5 package manager with statically embedded plugins.
+3. **`rpm2files`**: Standalone Go-based tool for extracting files from RPM packages.
+4. **`dnf5`**: Next-generation standalone DNF5 package manager with statically embedded plugins, including the `lock` and `rpmdb-mark` commands.
 
 ### Tool Naming Protocol
-- The dependency solver is named **`dnf_lock`** across the entire repository (`//:dnf_lock`, `//dnf:dnf_lock`, `@dnf_lock//:dnf_lock`).
-- **No compatibility aliases**: Do NOT introduce aliases for `lock`. Using `dnf_lock` avoids naming collisions with generic system lock utilities and accurately identifies the tool's purpose.
+- The dependency solver is the `lock` command of **`dnf5`** (`//:dnf5`). The libdnf `dnf_lock` and `mark` tools and the `microdnf lock` plugin were removed: do NOT reintroduce them or aliases for them.
 
 ### Host Alias Repository Pattern
 Modeled after `jq_host_alias_repo` in `bazel-contrib/jq.bzl`:
 - Downstream consumers access host-executable tools directly via:
   - `@microdnf//:microdnf`
   - `@rpm2archive//:rpm2archive`
-  - `@dnf_lock//:dnf_lock`
   - `@rpm2files//:rpm2files`
   - `@dnf5//:dnf5`
-- Each repository rule (`microdnf_host_alias_repo`, `rpm2archive_host_alias_repo`, `dnf_lock_host_alias_repo`, `rpm2files_host_alias_repo`, `dnf5_host_alias_repo`) inspects `rctx.os.name` and `rctx.os.arch` to alias directly to the matching `@<tool>_<platform>//file`.
+- Each repository rule (`microdnf_host_alias_repo`, `rpm2archive_host_alias_repo`, `rpm2files_host_alias_repo`, `dnf5_host_alias_repo`) inspects `rctx.os.name` and `rctx.os.arch` to alias directly to the matching `@<tool>_<platform>//file`.
 
-### `rpm_lock` Backend
-- `rpm_lock(backend = ...)` defaults to **`"dnf5"`** (`dnf5 lock`, tool `dnf5_tool`, default `//microdnf:dnf5`). `backend = "libdnf"` (`dnf_lock`, tool `lock_tool`, default `//microdnf:dnf_lock`) is deprecated and stays for one release (decision F8).
-- `//microdnf:dnf5` and `//microdnf:dnf_lock` are aliases to `//:dnf5` / `//:dnf_lock` in-repo. `package_release.sh` rewrites both (and `rpm2files`) to a `select` over the prebuilt `@<tool>_<platform>//file` and fails if an alias is not found. When adding a tool default to a rule, point it at a `//microdnf:` alias, never at a root `//:` target, which the release does not ship.
-- Any test of libdnf must set `backend = "libdnf"` explicitly. Every `rpm_lock` case in `e2e/` is declared with `lock_parity` (libdnf target plus a default-backend twin and a byte-diff of the lockfiles); the dnf5 twin deliberately sets neither `backend` nor `dnf5_tool`, so the defaults are covered.
-- `rpm_mark(backend = ...)` defaults to **`"dnf5"`** too (`dnf5 rpmdb-mark`, default `//microdnf:dnf5`); `backend = "libdnf"` (`mark`, `//:mark`, never shipped in a release) is deprecated for one release. The libdnf `ol9_marked_rpmdb` sets `backend = "libdnf"`; its dnf5 twin sets neither `backend` nor `dnf5_tool`.
+### `rpm_lock` and `rpm_mark`
+- Both run `dnf5` (`lock` and `rpmdb-mark`; tool attribute `dnf5_tool`, default `//microdnf:dnf5`). The `backend`, `lock_tool` and `mark_tool` attributes were removed together with the libdnf `dnf_lock`/`mark` tools; docs and release notes must say so.
+- `//microdnf:dnf5` is an alias to `//:dnf5` in-repo. `package_release.sh` rewrites it (and `rpm2files`) to a `select` over the prebuilt `@<tool>_<platform>//file` and fails if an alias is not found. When adding a tool default to a rule, point it at a `//microdnf:` alias, never at a root `//:` target, which the release does not ship.
+- Every `rpm_lock` case in `e2e/` is declared with `lock_golden` and its lockfile is diffed against `e2e/testdata/lock_golden/` (`//e2e/testdata:lock_golden_tests`). Update the goldens with `bazel run //e2e/testdata:lock_golden`.
+- `microdnf` and `rpm2archive` are still libdnf-based and still shipped, so libdnf and its 3rdparty modules stay.
 
 ### Upstream Repository Naming (`microdnf_src`)
 - In `bazel/extensions.bzl`, the upstream source git repository is named **`microdnf_src`** (not `microdnf`).
@@ -138,9 +135,9 @@ it is still going, or after it was killed.
 - **Downloading Needed Binaries for Packaging**:
   - In release workflows or when running packaging scripts (`package_release.sh`), only the final top-level targets are materialized:
     ```bash
-    bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all //:rpm2files_all //:dnf5_all --config=ci --remote_download_outputs=toplevel
+    bazel build //:microdnf_all //:rpm2archive_all //:rpm2files_all //:dnf5_all --config=ci --remote_download_outputs=toplevel
     ```
-    This ensures only the 20 needed release binaries (5 tools on 4 platforms) are downloaded to the runner while intermediate build artifacts stay in the remote CAS.
+    This ensures only the 16 needed release binaries (4 tools on 4 platforms) are downloaded to the runner while intermediate build artifacts stay in the remote CAS.
 
 ### Sanitizers
 - `bazel test --config=asan <e2e lock tests>` runs ASan + LSan + UBSan (see README). Fix findings in `dnf/`; third-party noise goes into `sanitizers/*.supp` with a reason.
