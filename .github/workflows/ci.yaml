@@ -40,7 +40,7 @@ jobs:
         run: .github/workflows/setup_buildbuddy.sh
 
       - name: Build all targets
-        run: bazel build //... //:microdnf_all //:rpm2archive_all //:dnf_lock_all //:rpm2files_all //:dnf5_all --config=ci
+        run: bazel build //... //:microdnf_all //:rpm2archive_all //:rpm2files_all //:dnf5_all --config=ci
 
       - name: Test
         run: bazel test //... --config=ci
@@ -71,7 +71,7 @@ jobs:
         run: .github/workflows/setup_buildbuddy.sh
 
       - name: Build all targets
-        run: bazel build //... //:microdnf_all //:rpm2archive_all //:dnf_lock_all //:rpm2files_all //:dnf5_all --config=ci
+        run: bazel build //... //:microdnf_all //:rpm2archive_all //:rpm2files_all //:dnf5_all --config=ci
 
       - name: Test
         run: bazel test //... --config=ci

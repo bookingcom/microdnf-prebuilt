@@ -48,7 +48,7 @@ jobs:
           .github/workflows/release_prep.sh "${TAG}"
 
       - name: Build All Release Targets
-        run: bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all //:rpm2files_all //:dnf5_all --config=ci --remote_download_outputs=toplevel
+        run: bazel build //:microdnf_all //:rpm2archive_all //:rpm2files_all //:dnf5_all --config=ci --remote_download_outputs=toplevel
 
       - name: Package Release Assets & Generate Integrities
         id: pkg
