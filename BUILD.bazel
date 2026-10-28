@@ -25,6 +25,7 @@ TARGETS = [
     "rpm2archive",
     "dnf_lock",
     "mark",
+    "dnf5",
 ]
 
 [
@@ -88,6 +89,7 @@ alias(
 tar(
     name = "tools_archive",
     srcs = [
+        ":dnf5",
         ":dnf_lock",
         ":mark",
         ":microdnf",
@@ -95,6 +97,7 @@ tar(
         ":rpm2files",
     ],
     mtree = [
+        "dnf5 uid=0 gid=0 mode=0755 time=0 type=file content=$(location :dnf5)",
         "dnf_lock uid=0 gid=0 mode=0755 time=0 type=file content=$(location :dnf_lock)",
         "lock uid=0 gid=0 mode=0755 time=0 type=link link=dnf_lock",
         "mark uid=0 gid=0 mode=0755 time=0 type=file content=$(location :mark)",

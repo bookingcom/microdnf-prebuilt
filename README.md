@@ -1,6 +1,6 @@
 # microdnf-prebuilt
 
-Bazel repository capable of building `microdnf`, `rpm2archive`, and `dnf_lock` hermetically across platforms.
+Bazel repository capable of building `microdnf`, `rpm2archive`, `dnf_lock`, `rpm2files`, and `dnf5` hermetically across platforms.
 
 ## Architecture
 
@@ -62,10 +62,10 @@ Any other `--setopt=<key>=<value>` or `<repo>.<key>=<value>` goes to libdnf. `rp
 
 ```bash
 # Build standalone binaries for the host
-bazel build //:microdnf //:rpm2archive //:dnf_lock
+bazel build //:microdnf //:rpm2archive //:dnf_lock //:rpm2files //:dnf5
 
 # Build cross-compiled binaries for all platforms (linux_amd64, linux_arm64, osx_amd64, osx_arm64)
-bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all
+bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all //:rpm2files_all //:dnf5_all
 ```
 
 ## Sanitizers

@@ -323,3 +323,25 @@ filegroup(
     ],
     tags = ["manual"],
 )
+
+alias(
+    name = "dnf5",
+    actual = "@dnf5_src//:dnf5",
+)
+
+[
+    platform_transition_binary(
+        name = "dnf5_" + platform,
+        binary = "@dnf5_src//:dnf5",
+        target_platform = "//bazel:" + platform,
+    )
+    for platform in SUPPORTED_PLATFORMS
+]
+
+filegroup(
+    name = "dnf5_all",
+    srcs = [
+        ":dnf5_" + platform
+        for platform in SUPPORTED_PLATFORMS
+    ],
+)

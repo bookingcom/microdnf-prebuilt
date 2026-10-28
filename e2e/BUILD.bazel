@@ -21,13 +21,31 @@ sh_test(
         "$(location //:dnf_lock)",
         "$(location //:rpm2files)",
         "$(location //:mark)",
+        "$(location //:dnf5)",
     ],
     data = [
+        "//:dnf5",
         "//:dnf_lock",
         "//:mark",
         "//:microdnf",
         "//:rpm2archive",
         "//:rpm2files",
+    ] + _SANITIZER_DATA,
+)
+
+# dnf5 smoke: repo load, repoquery and a solver run against the Oracle Linux 9 test repository
+sh_test(
+    name = "dnf5_smoke_test",
+    srcs = ["test_dnf5.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "e2e/testdata/ol9_repo",
+        "e2e/testdata/repo/tour-4-6.noarch.rpm",
+    ],
+    data = [
+        "//:dnf5",
+        "//e2e/testdata:ol9_repo_files",
+        "//e2e/testdata:test_repo_files",
     ] + _SANITIZER_DATA,
 )
 

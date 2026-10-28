@@ -83,6 +83,7 @@ Cross-compilation is supported for 4 platforms:
 2. **`rpm2archive`**: Standalone tool converting RPM package lists into deduplicated container layers.
 3. **`dnf_lock`**: Standalone dependency solver emitting JSON lockfiles.
 4. **`rpm2files`**: Standalone Go-based tool for extracting files from RPM packages.
+5. **`dnf5`**: Next-generation standalone DNF5 package manager with statically embedded plugins.
 
 ### Tool Naming Protocol
 - The dependency solver is named **`dnf_lock`** across the entire repository (`//:dnf_lock`, `//dnf:dnf_lock`, `@dnf_lock//:dnf_lock`).
@@ -95,7 +96,8 @@ Modeled after `jq_host_alias_repo` in `bazel-contrib/jq.bzl`:
   - `@rpm2archive//:rpm2archive`
   - `@dnf_lock//:dnf_lock`
   - `@rpm2files//:rpm2files`
-- Each repository rule (`microdnf_host_alias_repo`, `rpm2archive_host_alias_repo`, `dnf_lock_host_alias_repo`, `rpm2files_host_alias_repo`) inspects `rctx.os.name` and `rctx.os.arch` to alias directly to the matching `@<tool>_<platform>//file`.
+  - `@dnf5//:dnf5`
+- Each repository rule (`microdnf_host_alias_repo`, `rpm2archive_host_alias_repo`, `dnf_lock_host_alias_repo`, `rpm2files_host_alias_repo`, `dnf5_host_alias_repo`) inspects `rctx.os.name` and `rctx.os.arch` to alias directly to the matching `@<tool>_<platform>//file`.
 
 ### Upstream Repository Naming (`microdnf_src`)
 - In `bazel/extensions.bzl`, the upstream source git repository is named **`microdnf_src`** (not `microdnf`).
@@ -130,9 +132,9 @@ it is still going, or after it was killed.
 - **Downloading Needed Binaries for Packaging**:
   - In release workflows or when running packaging scripts (`package_release.sh`), only the final top-level targets are materialized:
     ```bash
-    bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all --config=ci --remote_download_outputs=toplevel
+    bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all //:rpm2files_all //:dnf5_all --config=ci --remote_download_outputs=toplevel
     ```
-    This ensures only the 12 needed release binaries are downloaded to the runner while intermediate build artifacts stay in the remote CAS.
+    This ensures only the 20 needed release binaries (5 tools on 4 platforms) are downloaded to the runner while intermediate build artifacts stay in the remote CAS.
 
 ### Sanitizers
 - `bazel test --config=asan <e2e lock tests>` runs ASan + LSan + UBSan (see README). Fix findings in `dnf/`; third-party noise goes into `sanitizers/*.supp` with a reason.
