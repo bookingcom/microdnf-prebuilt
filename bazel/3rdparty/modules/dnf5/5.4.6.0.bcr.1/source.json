@@ -3,16 +3,19 @@
     "integrity": "sha256-JC8Od1vI4QF6W/7IQcd2vq+n6mtb0uTXvA/518V5mPM=",
     "strip_prefix": "dnf5-5.4.6.0",
     "overlay": {
-        "BUILD.bazel": "sha256-Uajw4bHrZQ1q2+xGx0LXpgSfJX6lXrGbV7jpIjP9IDU=",
+        "BUILD.bazel": "sha256-UhatKZk6WEUSIvIOVJyTfvMHenhyUGVirhl18FnpnC8=",
         "MODULE.bazel": "sha256-2/iIQtyaS8frFsG3XboHb8w6tmGt9fOyxi/9J4gdoWY=",
         "compat/bazel_compat.h": "sha256-Bx5oJzAXrTcve/MTCJLoEQOc7att5ADlhIuw/NpCK4U=",
         "compat/darwin/sys/auxv.h": "sha256-ONOMj8IUKQILqgug+Q7HennOCPefJbOxS3UiV5kUJ4A=",
-        "defs.bzl": "sha256-KeP0hamL2m6uKVfF4FhcPhWYd82g/RNnZj1jHmkxFzE=",
+        "defs.bzl": "sha256-D3HOsVp/I/wMYtcenVkEDbZv3H1rlz7G535H3UKgzb8=",
         "libdnf5/conf/config.h": "sha256-kLKyVjC95KK/KjxuNknb3M9ByQAx6pDlE+VMoTLp2To="
     },
     "patches": {
         "libdnf5__module__nsvcap.cpp.patch": "sha256-FIRa9MHuq8XDTuB4/THDrmDJr1zDBJ4/bLrApKYBsyk=",
-        "libdnf5__utils__fs__utils.hpp.patch": "sha256-xo4Mkat1QP8KKv3AYqmnSgrSKZ+rgz3x0HuPgNpIkb8="
+        "libdnf5__plugin__plugins.cpp.patch": "sha256-JwzqcUZEtECsfbcPZ4hBmRsND/6+vn0MnE/rhGXtXdM=",
+        "libdnf5__plugin__utils.cpp.patch": "sha256-ZRemWr0PQG8LVeSnf/0Uor9h7c2PZNAtJd65k3Vcr/w=",
+        "libdnf5__utils__fs__utils.hpp.patch": "sha256-xo4Mkat1QP8KKv3AYqmnSgrSKZ+rgz3x0HuPgNpIkb8=",
+        "libdnf5__utils__system.cpp.patch": "sha256-SLnl0/+AqADrpYQvFn8CHhmiKeSL76Fj2TYFvcaniGU="
     },
     "patch_strip": 1
 }

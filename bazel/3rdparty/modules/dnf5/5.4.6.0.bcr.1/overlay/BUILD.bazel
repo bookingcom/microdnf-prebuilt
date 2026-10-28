@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load(":defs.bzl", "domain")
+load(":defs.bzl", "domain", "entry_points")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -47,8 +47,36 @@ cc_library(
     ],
 )
 
+# libdnf5 and its plugins refer to each other: plugins.cpp calls the plugins' entry points, the plugins call into
+# libdnf5. Static archives are scanned once in order, so the plugins are alwayslink and depend on the core library,
+# which puts them before it on the link line; the empty :libdnf5 library below ties the three together.
+# name, directory, extra deps
+_LIBDNF5_PLUGINS = [
+    ("actions", "actions", ["@json-c"]),
+    ("expired_pgp_keys", "expired-pgp-keys", ["@rpm", "@rpm//:rpmio"]),
+    ("local", "local", []),
+]
+
+[
+    cc_library(
+        name = "libdnf5_plugin_" + name,
+        srcs = glob(["libdnf5-plugins/%s/**/*.cpp" % dir]),
+        copts = domain("libdnf5-plugin-" + dir) + entry_points("libdnf_plugin", name),
+        cxxopts = _CXXOPTS,
+        local_defines = ["WITH_MODULEMD"],
+        alwayslink = True,
+        deps = [
+            ":common_obj",
+            ":headers",
+            ":libdnf5_core",
+            "@fmt",
+        ] + deps,
+    )
+    for (name, dir, deps) in _LIBDNF5_PLUGINS
+]
+
 cc_library(
-    name = "libdnf5",
+    name = "libdnf5_core",
     srcs = glob([
         "libdnf5/**/*.c",
         "libdnf5/**/*.cpp",
@@ -79,4 +107,9 @@ cc_library(
         "@sqlite3",
         "@toml11",
     ],
+)
+
+cc_library(
+    name = "libdnf5",
+    deps = [":libdnf5_core"] + [":libdnf5_plugin_" + p[0] for p in _LIBDNF5_PLUGINS],
 )

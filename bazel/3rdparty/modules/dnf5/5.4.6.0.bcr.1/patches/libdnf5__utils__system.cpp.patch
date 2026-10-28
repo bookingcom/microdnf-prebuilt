@@ -1,0 +1,94 @@
+--- a/libdnf5/utils/system.cpp
++++ b/libdnf5/utils/system.cpp
+@@ -22,17 +22,80 @@
+ #include <libdnf5/common/exception.hpp>
+ #include <libdnf5/utils/bgettext/bgettext-mark-domain.h>
+ #include <rpm/rpmlib.h>
++#include <rpm/rpmmacro.h>
+ #include <sys/auxv.h>
+ #include <sys/utsname.h>
+ 
++#include <unistd.h>
++
++#include <cstdlib>
++#include <string>
++#include <string_view>
++
+ namespace libdnf5::utils {
+ 
++namespace {
++
++// The part of rpm's rpmrc that decides which package architectures are installable on which; without it rpm
++// rejects even noarch packages. Taken from rpmrc.in, for the architectures this build supports.
++constexpr std::string_view RPMRC =
++    "arch_compat: x86_64_v4: x86_64_v3 x86_64_v2 x86_64 amd64 em64t athlon noarch\n"
++    "arch_compat: x86_64_v3: x86_64_v2 x86_64 amd64 em64t athlon noarch\n"
++    "arch_compat: x86_64_v2: x86_64 amd64 em64t athlon noarch\n"
++    "arch_compat: x86_64: amd64 em64t athlon noarch\n"
++    "arch_compat: athlon: i686\n"
++    "arch_compat: i686: i586\n"
++    "arch_compat: i586: i486\n"
++    "arch_compat: i486: i386\n"
++    "arch_compat: i386: noarch fat\n"
++    "arch_compat: aarch64: noarch\n"
++    "arch_compat: ppc64le: noarch fat\n"
++    "arch_compat: s390x: s390 noarch\n"
++    // rpm builds its compat tables from the host, so a macOS host needs this to install Linux packages.
++    "os_compat: Darwin: linux\n";
++
++}  // namespace
++
+ void init_lib_rpm(const char * arch) {
+     static bool lib_rpm_initiated{false};
+     if (!lib_rpm_initiated) {
+-        if (rpmReadConfigFiles(nullptr, arch) != 0) {
++        // Hermetic rpm configuration: read neither the host's rpmrc, its macro files (/usr/lib/rpm, /etc/rpm,
++        // ~/.rpmmacros) nor its init.lua (run from rpmConfigDir() when the Lua state is created). The few macros
++        // the rpmdb and transactions need are defined here.
++        setenv("RPM_CONFIGDIR", "/dev/null", 1);
++        macrofiles = "/dev/null";
++
++        char rpmrc_path[] = "/tmp/dnf5-rpmrc-XXXXXX";
++        const int rpmrc_fd = mkstemp(rpmrc_path);
++        if (rpmrc_fd < 0) {
++            throw RuntimeError(M_("failed to create a temporary rpmrc file"));
++        }
++        const bool written = write(rpmrc_fd, RPMRC.data(), RPMRC.size()) == static_cast<ssize_t>(RPMRC.size());
++        close(rpmrc_fd);
++        // The target is "<arch>-linux": the packages are for Linux, whatever system dnf5 runs on.
++        const int rc = written ? rpmReadConfigFiles(rpmrc_path, (std::string(arch) + "-linux").c_str()) : -1;
++        unlink(rpmrc_path);
++        if (rc != 0) {
+             throw RuntimeError(M_("failed to read rpm config files"));
+         }
++        rpmPushMacro(nullptr, "_dbpath", nullptr, "/var/lib/rpm", RMIL_DEFAULT);
++        // Hardcoded: every image this build targets has a sqlite rpmdb.
++        rpmPushMacro(nullptr, "_db_backend", nullptr, "sqlite", RMIL_DEFAULT);
++        // What /usr/lib/rpm/platform/*/macros sets: colored files of a 64-bit arch win over 32-bit ones, which
++        // multilib transactions rely on. 32-bit arches and noarch use rpm's default of 0.
++        const std::string_view arch_name{arch};
++        if (arch_name.starts_with("x86_64") || arch_name == "aarch64" || arch_name == "ppc64le" ||
++            arch_name == "s390x") {
++            rpmPushMacro(nullptr, "_transaction_color", nullptr, "3", RMIL_DEFAULT);
++            rpmPushMacro(nullptr, "_prefer_color", nullptr, "2", RMIL_DEFAULT);
++        }
++        // rpm's default: verify digests only; signatures are checked by dnf5 itself (gpgcheck).
++        rpmPushMacro(nullptr, "_pkgverify_level", nullptr, "digest", RMIL_DEFAULT);
++        rpmPushMacro(nullptr, "_rpmlock_path", nullptr, "%{_dbpath}/.rpm.lock", RMIL_DEFAULT);
++        rpmPushMacro(nullptr, "_tmppath", nullptr, "/var/tmp", RMIL_DEFAULT);
++        rpmPushMacro(nullptr, "_keyringpath", nullptr, "%{_dbpath}/pubkeys/", RMIL_DEFAULT);
++        rpmPushMacro(
++            nullptr, "_install_script_path", nullptr, "/sbin:/bin:/usr/sbin:/usr/bin:/usr/X11R6/bin", RMIL_DEFAULT);
+         lib_rpm_initiated = true;
+     }
+ }
+@@ -69,6 +132,9 @@
+         *modifier++ = endian;
+         *modifier = 0;
+     }
++    // macOS reports the architecture as arm64.
++    if (!strcmp(un.machine, "arm64"))
++        strcpy(un.machine, "aarch64");
+ #ifdef __MIPSEL__
+     // support for little endian MIPS
+     if (!strcmp(un.machine, "mips"))
