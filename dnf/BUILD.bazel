@@ -324,13 +324,14 @@ filegroup(
     tags = ["manual"],
 )
 
-# Upstream's dnf5 with the lock command linked in, see dnf5/main.cpp (DNF5_BUILTIN_PLUGINS). Not called dnf5: the
+# Upstream's dnf5 with the lock and rpmdb-mark commands linked in, see dnf5/main.cpp (DNF5_BUILTIN_PLUGINS). Not called dnf5: the
 # output file would be the directory of the sources in dnf5/.
 cc_binary(
     name = "dnf5_binary",
     deps = [
         "@dnf5_src//:dnf5_main",
         "//dnf/dnf5:lock_plugin",
+        "//dnf/dnf5:rpmdb_mark_plugin",
     ],
 )
 

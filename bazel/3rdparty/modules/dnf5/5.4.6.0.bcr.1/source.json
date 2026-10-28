@@ -11,7 +11,7 @@
         "libdnf5/conf/config.h": "sha256-kLKyVjC95KK/KjxuNknb3M9ByQAx6pDlE+VMoTLp2To="
     },
     "patches": {
-        "dnf5__main.cpp.patch": "sha256-3OwDppDuq2BaXWkn/E38cthaEsc5LukY4PnjLWHtlFU=",
+        "dnf5__main.cpp.patch": "sha256-DhdAWpHPGbCwOZc+kcydeQo0/4vZXOflKGO9toJwbvI=",
         "libdnf5-cli__progressbar__progress_bar.cpp.patch": "sha256-2kFr77AnU6n4j9AyLtgoUVkTvfixqKCcCXVtWMo0w5o=",
         "libdnf5-cli__session.cpp.patch": "sha256-bFw9/HGKIpMLaij2h6pfQc+m8eVf57WNgMFVMAxVX9A=",
         "libdnf5__module__nsvcap.cpp.patch": "sha256-FIRa9MHuq8XDTuB4/THDrmDJr1zDBJ4/bLrApKYBsyk=",

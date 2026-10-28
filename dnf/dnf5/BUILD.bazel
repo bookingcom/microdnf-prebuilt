@@ -31,3 +31,28 @@ cc_library(
         "@json-c//:json-c",
     ],
 )
+
+# The rpmdb-mark command: the dnf5 counterpart of //dnf:mark, writing package headers into an rpmdb.
+cc_library(
+    name = "rpmdb_mark_plugin",
+    srcs = [
+        "rpmdb_mark.cpp",
+        "rpmdb_mark.hpp",
+        "rpmdb_mark_cmd_plugin.cpp",
+    ],
+    copts = domain("dnf5-plugin-rpmdb-mark") + entry_points("dnf5_plugin", "rpmdb_mark"),
+    cxxopts = [
+        "-std=gnu++20",
+        "-include",
+        "bazel_compat.h",
+    ],
+    alwayslink = True,
+    deps = [
+        "@dnf5_src//:common_obj",
+        "@dnf5_src//:headers",
+        "@dnf5_src//:libdnf5",
+        "@dnf5_src//:libdnf5-cli",
+        "@rpm",
+        "@rpm//:rpmio",
+    ],
+)
