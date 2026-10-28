@@ -1,5 +1,7 @@
 #include "lock.hpp"
 
+#include "lock_layers.hpp"
+
 #include <glib.h>
 #include <json-c/json.h>
 #include <libdnf5-cli/argument_parser.hpp>
@@ -108,23 +110,6 @@ std::vector<Package> one_per_nevra(const std::vector<Package> & pkgs) {
     }
     g_hash_table_destroy(by_nevra);
     return out;
-}
-
-// The package's checksum as the lockfile's "integrity" (algorithm-base64) and, in `hex`, its "checksum".
-std::string integrity_of(const Package & pkg, std::string & hex) {
-    auto checksum = pkg.get_checksum();
-    hex = checksum.get_checksum();
-    if (hex.empty()) {
-        return "";
-    }
-    std::string raw;
-    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
-        raw.push_back(static_cast<char>(std::stoi(hex.substr(i, 2), nullptr, 16)));
-    }
-    gchar * b64 = g_base64_encode(reinterpret_cast<const guchar *>(raw.data()), raw.size());
-    std::string integrity = checksum.get_type_str() + "-" + b64;
-    g_free(b64);
-    return integrity;
 }
 
 // `base` and `rel` with exactly one slash between them.
@@ -295,6 +280,31 @@ void LockCommand::run() {
         base.get_repo_sack()->reapply_module_filtering();
     }
 
+    // What the layers below hold.
+    const auto installonly = base.get_config().get_installonlypkgs_option().get_value();
+    Layers layers;
+    for (const auto & lockfile : lockfiles) {
+        load_lockfile(lockfile, installonly, layers);
+    }
+    // The architectures of the first layer that names some, unless --archlist says otherwise.
+    std::string arch_text;
+    for (const auto & arch : archlist) {
+        arch_text += (arch_text.empty() ? "" : ",") + arch;
+    }
+    if (archlist.empty() && layers.arch && !layers.arch->empty()) {
+        arch_text = *layers.arch;
+        std::replace(arch_text.begin(), arch_text.end(), ' ', ',');
+        append_list(archlist, arch_text.c_str());
+        arch_text = *layers.arch;
+    }
+    if (!layers.order.empty()) {
+        load_system_repo(base, layers, archlist);
+    }
+    std::map<std::string, std::string> installed;
+    for (const auto & [name, pkg] : layers.by_name) {
+        installed[name] = pkg->nevra.value_or("");
+    }
+
     libdnf5::ResolveSpecSettings spec_settings;
     spec_settings.set_with_nevra(true);
     spec_settings.set_with_provides(true);
@@ -333,15 +343,14 @@ void LockCommand::run() {
         directly_requested.insert(pkg.get_name());
     }
 
-    // What the layers below hold: name -> NEVRA.
-    std::map<std::string, std::string> installed;
-
-    if (targets.empty()) {
+    const bool all_requested_installed = std::all_of(
+        directly_requested.begin(), directly_requested.end(), [&](const auto & name) { return installed.count(name) > 0; });
+    if (targets.empty() && !all_requested_installed) {
         throw libdnf5::cli::CommandExitError(1, M_("No packages matched the specified criteria"));
     }
 
     std::vector<Package> all_pkgs;
-    {
+    if (!targets.empty()) {
         libdnf5::Goal goal(base);
         if (best) {
             for (const auto & pkg : targets) {
@@ -442,12 +451,8 @@ void LockCommand::run() {
 
     json_object * root = json_object_new_object();
     json_object_object_add(root, "version", json_object_new_int(1));
-    if (!archlist.empty()) {
-        std::string joined;
-        for (const auto & arch : archlist) {
-            joined += (joined.empty() ? "" : ",") + arch;
-        }
-        json_object_object_add(root, "arch", json_object_new_string(joined.c_str()));
+    if (!arch_text.empty()) {
+        json_object_object_add(root, "arch", json_object_new_string(arch_text.c_str()));
     }
     json_object_object_add(root, "requested", json_strings(directly_requested));
 

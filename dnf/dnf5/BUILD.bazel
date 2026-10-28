@@ -9,6 +9,8 @@ cc_library(
     name = "lock_plugin",
     srcs = [
         "lock.cpp",
+        "lock_layers.cpp",
+        "lock_layers.hpp",
         "lock.hpp",
         "lock_cmd_plugin.cpp",
     ],
