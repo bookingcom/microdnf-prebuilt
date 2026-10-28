@@ -39,6 +39,13 @@ bazel run //:dnf_lock -- -o lockfile.json --setopt=reposdir=/path/to/repos.d ed 
 bazel run //:microdnf -- lock -o lockfile.json --setopt=reposdir=/path/to/repos.d ed bash
 ```
 
+#### dnf options
+| Option | Behaviour |
+| --- | --- |
+| `--forcearch=<arch>` | Solver architecture. It defaults to the first non-`noarch`/`src` `--archlist` entry, so an x86_64 lock resolves on an arm64 host. The same architecture feeds `$basearch` in repo URLs (`i686` maps to `i386`, `armv7hl` to `armhfp`); an explicit `DNF_VAR_basearch` in the environment is overridden. |
+
+`rpm_lock` exposes the same knob as the `forcearch` attribute.
+
 ### 3. Hermetic Host Portability
 - Automatic hermetic fallback configuration when `/usr/lib/rpm/rpmrc` is absent on host systems.
 - Unprivileged user fallback redirecting caches to `~/.cache/microdnf` and repos to a fallback directory when `/etc/yum.repos.d` is missing.

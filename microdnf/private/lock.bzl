@@ -2,6 +2,13 @@
 
 load("//microdnf/private:providers.bzl", "RpmLockFileInfo")
 
+def _solver_args(ctx):
+    """dnf_lock flags shaping the solve (dnf semantics), shared by build and run."""
+    args = []
+    if ctx.attr.forcearch:
+        args.append("--forcearch=" + ctx.attr.forcearch)
+    return args
+
 def _rpm_lock_impl(ctx):
     out = ctx.outputs.out
     if not out:
@@ -68,6 +75,9 @@ mkdir -p "${CACHE_DIR}"
     for lf in ctx.files.lock_files:
         args.add("--lockfile=" + lf.path)
 
+    solver_args = _solver_args(ctx)
+    args.add_all(solver_args)
+
     for pkg in ctx.attr.packages:
         args.add(pkg)
 
@@ -121,6 +131,7 @@ mkdir -p "${CACHE_DIR}"
   --releasever="%s" \\
   %s \\
   %s \\
+  %s \\
   %s
 
 mkdir -p "$(dirname "${DEST}")"
@@ -136,6 +147,7 @@ echo "Lockfile updated at: ${DEST}"
         ctx.attr.releasever,
         " ".join(["--exclude='%s'" % e for e in ctx.attr.exclude]),
         " ".join(["--lockfile='%s'" % lf.short_path for lf in ctx.files.lock_files]),
+        " ".join(["'%s'" % a for a in solver_args]),
         " ".join(["'%s'" % p for p in ctx.attr.packages]),
     )
 
@@ -172,6 +184,9 @@ rpm_lock = rule(
         "exclude": attr.string_list(
             default = [],
             doc = "Optional packages to exclude and prune from the dependency tree.",
+        ),
+        "forcearch": attr.string(
+            doc = "Architecture to solve for instead of the host's (default: first non-noarch entry of arch).",
         ),
         "lock_files": attr.label_list(
             default = [],

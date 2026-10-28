@@ -81,6 +81,58 @@ process_global_option (const gchar  *option_name,
   return TRUE;
 }
 
+/* Maps a solve architecture to dnf's $basearch (i686 -> i386, armv7hl -> armhfp, ...). */
+static const gchar *
+basearch_for_arch (const gchar *arch)
+{
+  if (arch[0] == 'i' && arch[1] != '\0' && g_str_has_suffix (arch, "86") && strlen (arch) == 4)
+    return "i386";
+  if (g_str_has_prefix (arch, "armv") && g_str_has_suffix (arch, "hl"))
+    return "armhfp";
+  return arch;
+}
+
+/* The architecture to solve for: --forcearch, else the first non-noarch/src
+ * --archlist entry. Read from a copy of argv, ahead of dnf_context_setup, so
+ * that $basearch in repo URLs follows it too. */
+static gchar *
+find_solve_arch (int argc, char **argv)
+{
+  g_autofree gchar *opt_archlist = NULL;
+  g_autofree gchar *opt_forcearch = NULL;
+  const GOptionEntry entries[] = {
+    { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, NULL, NULL },
+    { "forcearch", '\0', 0, G_OPTION_ARG_STRING, &opt_forcearch, NULL, NULL },
+    { NULL }
+  };
+
+  g_autofree gchar **argv_copy = g_new0 (gchar *, argc + 1);
+  for (int i = 0; i < argc; i++)
+    argv_copy[i] = argv[i];
+  int argc_copy = argc;
+  gchar **argv_ptr = argv_copy;
+
+  g_autoptr(GOptionContext) arch_ctx = g_option_context_new (NULL);
+  g_option_context_add_main_entries (arch_ctx, entries, NULL);
+  g_option_context_set_ignore_unknown_options (arch_ctx, TRUE);
+  g_option_context_set_help_enabled (arch_ctx, FALSE);
+  if (!g_option_context_parse (arch_ctx, &argc_copy, &argv_ptr, NULL))
+    return NULL; /* run_lock reports the malformed option */
+
+  if (opt_forcearch && *opt_forcearch)
+    return g_steal_pointer (&opt_forcearch);
+  if (opt_archlist)
+    {
+      g_auto(GStrv) archs = g_strsplit_set (opt_archlist, ", ", -1);
+      for (char **a = archs; *a; ++a)
+        {
+          if (**a && g_strcmp0 (*a, "noarch") != 0 && g_strcmp0 (*a, "src") != 0)
+            return g_strdup (*a);
+        }
+    }
+  return NULL;
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -165,6 +217,7 @@ main (int argc, char *argv[])
           const GOptionEntry entries[] = {
             { "output", 'o', 0, G_OPTION_ARG_NONE, NULL, "Output JSON lockfile path (defaults to stdout)", "FILE" },
             { "archlist", '\0', 0, G_OPTION_ARG_NONE, NULL, "Limit query to packages of given architectures", "ARCH,..." },
+            { "forcearch", '\0', 0, G_OPTION_ARG_NONE, NULL, "Solve for this architecture instead of the host's (default: first non-noarch --archlist entry)", "ARCH" },
             { "exclude", 'x', 0, G_OPTION_ARG_NONE, NULL, "Exclude package and its dependencies unless directly requested", "PKG,..." },
             { "lockfile", 'l', 0, G_OPTION_ARG_NONE, NULL, "Ordered list of lockfiles from previous layers", "FILE" },
             { "lock-file", 0, 0, G_OPTION_ARG_NONE, NULL, "Ordered list of lockfiles from previous layers", "FILE" },
@@ -193,6 +246,17 @@ main (int argc, char *argv[])
 
   if (opt_refresh)
     dnf_context_set_cache_age (ctx, 0);
+
+  /* Solve for the target architecture, not the host's: otherwise libsolv
+   * rejects e.g. x86_64 packages on an arm64 host, and $basearch in repo URLs
+   * would keep the host value. libdnf reads DNF_VAR_<name> as a repo variable
+   * that overrides the built-in one. */
+  g_autofree gchar *solve_arch = find_solve_arch (argc, argv);
+  if (solve_arch)
+    {
+      dnf_context_set_arch (ctx, solve_arch);
+      setenv ("DNF_VAR_basearch", basearch_for_arch (solve_arch), 1);
+    }
 
   if (!dnf_context_setup (ctx, NULL, &error))
     {

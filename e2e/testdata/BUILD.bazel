@@ -6,6 +6,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "aarch64.lock.json",
     "changed_integrity.lock.json",
+    "features.repo",
     "generate_repodata.py",
     "ol9_repo/curl-7.76.1-40.el9_8.8.x86_64.rpm",
     "ol9_repo/libcurl-7.76.1-40.el9_8.8.x86_64.rpm",
@@ -47,6 +48,29 @@ filegroup(
         "repo/mystery-devel-19.67-1.noarch.rpm",
         "repo/tour-4-6.noarch.rpm",
     ],
+)
+
+# Synthetic metadata-only repository for the dnf_lock option tests
+run_binary(
+    name = "generate_features_repodata",
+    tool = ":generate_repodata",
+    args = [
+        "--scenario",
+        "features",
+        "--out-dir",
+        "$(RULEDIR)/features-repo/repodata",
+    ],
+    outs = [
+        "features-repo/repodata/filelists.xml.gz",
+        "features-repo/repodata/other.xml.gz",
+        "features-repo/repodata/primary.xml.gz",
+        "features-repo/repodata/repomd.xml",
+    ],
+)
+
+filegroup(
+    name = "features_repo_files",
+    srcs = [":generate_features_repodata"],
 )
 
 filegroup(

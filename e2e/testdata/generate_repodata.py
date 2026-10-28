@@ -161,23 +161,99 @@ UPDATEINFO_XML = b"""<?xml version="1.0" ?>
 </updates>
 """
 
+# Synthetic metadata-only repository for the dnf_lock feature tests
+# (forcearch).
+# Each tuple: (name, epoch, version, release, arch, [required package names]).
+FEATURE_PACKAGES = [
+    # --forcearch: a noarch package served from a $basearch URL.
+    ("libfoo", 0, "2.0", "1", "noarch", []),
+    # --forcearch=x86_64: an x86_64 package must resolve on any host.
+    ("expat", 0, "2.7.3", "1.el10_2.7", "x86_64", []),
+]
+
+
+def _xml_doc(root, attrs, body):
+    head = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    return (head + f"<{root} {attrs}>\n" + "\n".join(body) + f"\n</{root}>\n").encode()
+
+
+def feature_repodata():
+    """Returns (primary, filelists, other) XML for FEATURE_PACKAGES."""
+    primary = []
+    stubs = []  # filelists.xml and other.xml carry the same per-package stub
+    for name, epoch, ver, rel, arch, requires in FEATURE_PACKAGES:
+        pkgid = hashlib.sha256(f"{name}-{epoch}:{ver}-{rel}.{arch}".encode()).hexdigest()
+        version = f'  <version epoch="{epoch}" ver="{ver}" rel="{rel}"/>'
+        primary += [
+            '<package type="rpm">',
+            f"  <name>{name}</name>",
+            f"  <arch>{arch}</arch>",
+            version,
+            f'  <checksum type="sha256" pkgid="YES">{pkgid}</checksum>',
+            f"  <summary>{name} test package</summary>",
+            f"  <description>{name} test package.</description>",
+            "  <packager></packager>",
+            "  <url></url>",
+            '  <time file="1404109239" build="1404109194"/>',
+            '  <size package="1000" installed="0" archive="0"/>',
+            f'  <location href="features/{name}-{ver}-{rel}.{arch}.rpm"/>',
+            "  <format>",
+            "    <rpm:license>MIT</rpm:license>",
+            "    <rpm:vendor/>",
+            "    <rpm:group>Unspecified</rpm:group>",
+            "    <rpm:buildhost>localhost</rpm:buildhost>",
+            f"    <rpm:sourcerpm>{name}-{ver}-{rel}.src.rpm</rpm:sourcerpm>",
+            '    <rpm:header-range start="0" end="0"/>',
+            "    <rpm:provides>",
+            f'      <rpm:entry name="{name}" flags="EQ" epoch="{epoch}" ver="{ver}" rel="{rel}"/>',
+            "    </rpm:provides>",
+        ]
+        if requires:
+            primary.append("    <rpm:requires>")
+            primary += [f'      <rpm:entry name="{dep}"/>' for dep in requires]
+            primary.append("    </rpm:requires>")
+        primary += ["  </format>", "</package>"]
+        stubs += [f'<package pkgid="{pkgid}" name="{name}" arch="{arch}">', version, "</package>"]
+
+    count = f'packages="{len(FEATURE_PACKAGES)}"'
+    return (
+        _xml_doc(
+            "metadata",
+            f'xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" {count}',
+            primary,
+        ),
+        _xml_doc("filelists", f'xmlns="http://linux.duke.edu/metadata/filelists" {count}', stubs),
+        _xml_doc("otherdata", f'xmlns="http://linux.duke.edu/metadata/other" {count}', stubs),
+    )
+
+
 def compress(data):
     return gzip.compress(data, mtime=0)
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--scenario", choices=["default", "features"], default="default")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    files = {
-        "primary.xml.gz": ("primary", PRIMARY_XML),
-        "filelists.xml.gz": ("filelists", FILELISTS_XML),
-        "other.xml.gz": ("other", OTHER_XML),
-        "prestodelta.xml.gz": ("prestodelta", PRESTODELTA_XML),
-        "updateinfo.xml.gz": ("updateinfo", UPDATEINFO_XML),
-    }
+    if args.scenario == "features":
+        primary_xml, filelists_xml, other_xml = feature_repodata()
+        files = {
+            "primary.xml.gz": ("primary", primary_xml),
+            "filelists.xml.gz": ("filelists", filelists_xml),
+            "other.xml.gz": ("other", other_xml),
+        }
+    else:
+        files = {
+            "primary.xml.gz": ("primary", PRIMARY_XML),
+            "filelists.xml.gz": ("filelists", FILELISTS_XML),
+            "other.xml.gz": ("other", OTHER_XML),
+            "prestodelta.xml.gz": ("prestodelta", PRESTODELTA_XML),
+            "updateinfo.xml.gz": ("updateinfo", UPDATEINFO_XML),
+        }
 
     meta_entries = []
     for fname, (dtype, raw) in files.items():
@@ -209,6 +285,7 @@ def main():
 """
     with open(os.path.join(args.out_dir, "repomd.xml"), "w", encoding="utf-8") as f:
         f.write(repomd)
+
 
 if __name__ == "__main__":
     main()
