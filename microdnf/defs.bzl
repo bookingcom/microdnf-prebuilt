@@ -5,6 +5,11 @@ load(
     _rpm_archive = "rpm_archive",
 )
 load(
+    "//microdnf/private:config.bzl",
+    _DNF5_PREAMBLE = "DNF5_PREAMBLE",
+    _dnf_config = "dnf_config",
+)
+load(
     "//microdnf/private:extensions.bzl",
     _dnf5_host_alias_repo = "dnf5_host_alias_repo",
     _dnf_lock_host_alias_repo = "dnf_lock_host_alias_repo",
@@ -26,6 +31,10 @@ load(
     _rpm_mark = "rpm_mark",
 )
 load(
+    "//microdnf/private:providers.bzl",
+    _DnfConfigInfo = "DnfConfigInfo",
+)
+load(
     "//microdnf/private:toolchain.bzl",
     _MicrodnfInfo = "MicrodnfInfo",
     _microdnf_toolchain = "microdnf_toolchain",
@@ -40,6 +49,9 @@ dnf_lock_host_alias_repo = _dnf_lock_host_alias_repo
 rpm2files_host_alias_repo = _rpm2files_host_alias_repo
 dnf5_host_alias_repo = _dnf5_host_alias_repo
 
+dnf_config = _dnf_config
+DnfConfigInfo = _DnfConfigInfo
+DNF5_PREAMBLE = _DNF5_PREAMBLE
 rpm_lock = _rpm_lock
 rpm_mark = _rpm_mark
 rpm_archive = _rpm_archive

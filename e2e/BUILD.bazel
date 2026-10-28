@@ -1,6 +1,6 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_test", "default_test_runner")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//microdnf:defs.bzl", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
+load("//microdnf:defs.bzl", "dnf_config", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
 load("//microdnf/private:package.bzl", "rpm_package")
 
 package(default_visibility = ["//visibility:public"])
@@ -46,6 +46,37 @@ sh_test(
         "//:dnf5",
         "//e2e/testdata:ol9_repo_files",
         "//e2e/testdata:test_repo_files",
+    ] + _SANITIZER_DATA,
+)
+
+# dnf_config renders dnf.conf and the .repo file; the preamble makes dnf5 read only those.
+dnf_config(
+    name = "ol9_dnf_config",
+    excludepkgs = ["mystery-devel"],
+    install_weak_deps = False,
+    module_platform_id = "platform:el9",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:ol9_repo/ol9.repo"],
+    repo_files = ["//e2e/testdata:ol9_repo_files"],
+)
+
+filegroup(
+    name = "dnf5_test_lib",
+    srcs = ["dnf5_lib.sh"],
+)
+
+sh_test(
+    name = "dnf5_config_smoke_test",
+    srcs = ["test_dnf5_config.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
+        "e2e/testdata/ol9_repo",
+    ],
+    data = [
+        ":dnf5_test_lib",
+        ":ol9_dnf_config",
+        "//:dnf5",
     ] + _SANITIZER_DATA,
 )
 
