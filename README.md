@@ -76,7 +76,7 @@ UBSan aborts on the first finding). It is Linux-only and sets `ASAN_OPTIONS`, `L
 for tests, so no manual steps are needed:
 
 ```bash
-bazel test --config=asan //e2e:lock_direct_test //e2e:lock_layers_test //e2e:lock_features_test //e2e:oracle_linux_curl_mark_test //e2e:test_tools_test
+bazel test --config=asan //e2e:lock_direct_test //e2e:lock_layers_test //e2e:lock_features_test //e2e:oracle_linux_curl_mark_test //e2e:test_tools_test //e2e:lock_layers_dnf5_test //e2e:dnf5_smoke_test //e2e:dnf5_config_smoke_test //e2e:dnf5_config_golden_test //e2e:lock_parity_tests
 ```
 
 Known third-party noise is suppressed in [`sanitizers/ubsan.supp`](sanitizers/ubsan.supp) and

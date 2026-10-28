@@ -8,3 +8,5 @@ pointer-overflow:libsolv+
 nonnull-attribute:libsolv+
 # libpeas passes a NULL source to memcpy with size 0 (peas-plugin-loader-c.c:129).
 nonnull-attribute:libpeas+
+# libdnf5 SolvMap::operator= memcpy()s an empty map (NULL pointer, size 0) in Goal::resolve (solv_map.hpp:333).
+nonnull-attribute:solv_map.hpp
