@@ -99,6 +99,11 @@ Modeled after `jq_host_alias_repo` in `bazel-contrib/jq.bzl`:
   - `@dnf5//:dnf5`
 - Each repository rule (`microdnf_host_alias_repo`, `rpm2archive_host_alias_repo`, `dnf_lock_host_alias_repo`, `rpm2files_host_alias_repo`, `dnf5_host_alias_repo`) inspects `rctx.os.name` and `rctx.os.arch` to alias directly to the matching `@<tool>_<platform>//file`.
 
+### `rpm_lock` Backend
+- `rpm_lock(backend = ...)` defaults to **`"dnf5"`** (`dnf5 lock`, tool `dnf5_tool`, default `//microdnf:dnf5`). `backend = "libdnf"` (`dnf_lock`, tool `lock_tool`, default `//microdnf:dnf_lock`) is deprecated and stays for one release (decision F8).
+- `//microdnf:dnf5` and `//microdnf:dnf_lock` are aliases to `//:dnf5` / `//:dnf_lock` in-repo. `package_release.sh` rewrites both (and `rpm2files`) to a `select` over the prebuilt `@<tool>_<platform>//file` and fails if an alias is not found. When adding a tool default to a rule, point it at a `//microdnf:` alias, never at a root `//:` target, which the release does not ship.
+- Any test of libdnf must set `backend = "libdnf"` explicitly. Every `rpm_lock` case in `e2e/` is declared with `lock_parity` (libdnf target plus a default-backend twin and a byte-diff of the lockfiles); the dnf5 twin deliberately sets neither `backend` nor `dnf5_tool`, so the defaults are covered.
+
 ### Upstream Repository Naming (`microdnf_src`)
 - In `bazel/extensions.bzl`, the upstream source git repository is named **`microdnf_src`** (not `microdnf`).
 - This prevents a Bzlmod repository name collision in `MODULE.bazel` with the `@microdnf` host alias repository.

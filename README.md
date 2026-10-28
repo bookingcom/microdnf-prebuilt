@@ -54,6 +54,29 @@ The lock holds every package the solver installs, weak dependencies (Recommends,
 Any other `--setopt=<key>=<value>` or `<repo>.<key>=<value>` goes to libdnf. `rpm_lock` exposes the same knobs as `excludepkgs`,
 `forcearch`, `module_enable`, `module_platform_id`, `nobest` and `install_weak_deps` attributes.
 
+#### `rpm_lock` and its `backend`
+The `rpm_lock` rule writes the same lockfile with either solver, chosen by `backend`:
+
+| `backend` | Solver | Tool attribute | Status |
+| --- | --- | --- | --- |
+| `"dnf5"` (default) | `dnf5 lock` under a hermetic [`dnf_config`](microdnf/private/config.bzl) | `dnf5_tool`, default `//microdnf:dnf5` (the prebuilt `dnf5` of the host platform in a release) | current |
+| `"libdnf"` | `dnf_lock` | `lock_tool`, default `//microdnf:dnf_lock` | deprecated, kept for one release |
+
+```starlark
+rpm_lock(
+    name = "base_lock",
+    arch = ["x86_64", "noarch"],
+    packages = ["bash"],
+    releasever = "9",
+    repo_config = "ol9.repo",
+    # backend = "libdnf",  # opt back into dnf_lock for this release
+)
+```
+
+Targets that relied on the old default solve with dnf5 now; set `backend = "libdnf"` to keep dnf_lock. The two backends are
+held to byte-identical lockfiles (whole-lockfile `diff_test`s in `//e2e:lock_parity_tests`); `exclude` becomes
+`dnf5 lock --prune`. The only known difference is wording: dnf5 words the `--best`/`--no-best` conflict error differently.
+
 ### 3. Hermetic Host Portability
 - Automatic hermetic fallback configuration when `/usr/lib/rpm/rpmrc` is absent on host systems.
 - Unprivileged user fallback redirecting caches to `~/.cache/microdnf` and repos to a fallback directory when `/etc/yum.repos.d` is missing.
@@ -76,7 +99,7 @@ UBSan aborts on the first finding). It is Linux-only and sets `ASAN_OPTIONS`, `L
 for tests, so no manual steps are needed:
 
 ```bash
-bazel test --config=asan //e2e:lock_direct_test //e2e:lock_layers_test //e2e:lock_features_test //e2e:oracle_linux_curl_mark_test //e2e:test_tools_test //e2e:lock_layers_dnf5_test //e2e:dnf5_smoke_test //e2e:dnf5_config_smoke_test //e2e:dnf5_config_golden_test //e2e:lock_parity_tests
+bazel test --config=asan //e2e:lock_direct_test //e2e:lock_layers_test //e2e:lock_features_test //e2e:oracle_linux_curl_mark_test //e2e:test_tools_test //e2e:lock_layers_dnf5_test //e2e:lock_direct_dnf5_test //e2e:lock_features_dnf5_test //e2e:dnf5_smoke_test //e2e:dnf5_config_smoke_test //e2e:dnf5_config_golden_test //e2e:lock_parity_tests
 ```
 
 Known third-party noise is suppressed in [`sanitizers/ubsan.supp`](sanitizers/ubsan.supp) and
