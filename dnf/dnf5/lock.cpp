@@ -349,11 +349,28 @@ void LockCommand::run() {
         throw libdnf5::cli::CommandExitError(1, M_("No packages matched the specified criteria"));
     }
 
+    // A package of a layer below that the repositories do not replace with a newer or another build.
+    auto held = [&](const Package & pkg) {
+        auto inst = layers.find(pkg, installonly);
+        return inst && !integrity_differs(inst->integrity, pkg);
+    };
+
     std::vector<Package> all_pkgs;
+    std::vector<Package> obsoleted;
     if (!targets.empty()) {
         libdnf5::Goal goal(base);
         if (best) {
             for (const auto & pkg : targets) {
+                // dnf leaves an installed package alone unless the repositories hold a newer build: an install job for
+                // an older or identical copy of it would count as a fresh install and pull in that copy's weak
+                // dependencies.
+                auto inst = layers.find(pkg, installonly);
+                if (inst && inst->version) {
+                    int cmp = evrcmp_str(*inst->version, pkg);
+                    if (cmp > 0 || (cmp == 0 && !integrity_differs(inst->integrity, pkg))) {
+                        continue;
+                    }
+                }
                 goal.add_rpm_install(pkg);
             }
         } else {
@@ -372,9 +389,41 @@ void LockCommand::run() {
         if (transaction.get_problems() != libdnf5::GoalProblem::NO_PROBLEM) {
             throw libdnf5::cli::CommandExitError(1, M_("{}"), problems_message(transaction));
         }
+        using Action = libdnf5::transaction::TransactionItemAction;
+        // Only packages of a layer below can be obsoleted: a package the solve replaces with one of another name.
         for (const auto & tp : transaction.get_transaction_packages()) {
-            using Action = libdnf5::transaction::TransactionItemAction;
-            if (tp.get_action() == Action::INSTALL || tp.get_action() == Action::UPGRADE) {
+            if (tp.get_action() != Action::REPLACED) {
+                continue;
+            }
+            const auto replaced = tp.get_package();
+            for (const auto & replacer : tp.get_replaced_by()) {
+                if (replacer.get_name() != replaced.get_name()) {
+                    obsoleted.push_back(replaced);
+                    break;
+                }
+            }
+        }
+        std::sort(obsoleted.begin(), obsoleted.end(), [](const Package & a, const Package & b) { return a.get_id() < b.get_id(); });
+        for (const auto & pkg : obsoleted) {
+            std::fprintf(stderr, "warning: the solve obsoletes %s from a layer below\n", pkg.get_nevra().c_str());
+        }
+
+        // Targets and installs only when new to the layers below or a different build. With --nobest the solver may pick
+        // another version than the targets: the installs list it.
+        if (best) {
+            for (const auto & pkg : targets) {
+                if (!held(pkg)) {
+                    all_pkgs.push_back(pkg);
+                }
+            }
+        }
+        for (const auto & tp : transaction.get_transaction_packages()) {
+            if (tp.get_action() == Action::INSTALL && !held(tp.get_package())) {
+                all_pkgs.push_back(tp.get_package());
+            }
+        }
+        for (const auto & tp : transaction.get_transaction_packages()) {
+            if (tp.get_action() == Action::UPGRADE) {
                 all_pkgs.push_back(tp.get_package());
             }
         }
@@ -455,6 +504,18 @@ void LockCommand::run() {
         json_object_object_add(root, "arch", json_object_new_string(arch_text.c_str()));
     }
     json_object_object_add(root, "requested", json_strings(directly_requested));
+    if (!obsoleted.empty()) {
+        json_object * array = json_object_new_array();
+        for (const auto & pkg : obsoleted) {
+            json_object * obj = json_object_new_object();
+            json_object_object_add(obj, "name", json_object_new_string(pkg.get_name().c_str()));
+            json_object_object_add(obj, "version", json_object_new_string(pkg.get_evr().c_str()));
+            json_object_object_add(obj, "arch", json_object_new_string(pkg.get_arch().c_str()));
+            json_object_object_add(obj, "nevra", json_object_new_string(pkg.get_nevra().c_str()));
+            json_object_array_add(array, obj);
+        }
+        json_object_object_add(root, "obsoleted", array);
+    }
 
     json_object * packages = json_object_new_array();
     for (const auto & pkg : resolved) {

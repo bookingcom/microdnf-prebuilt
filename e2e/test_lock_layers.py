@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs dnf_lock --lockfile on small metadata-only repos and checks what it locks on top of the layer below.
 
-Args: <dnf_lock>
+Args: <dnf_lock>, or <dnf5> dnf5 <preamble.args> to run `dnf5 lock` with the preamble of a dnf_config.
 """
 
 import base64
@@ -14,7 +14,23 @@ import sys
 import tempfile
 
 DNF_LOCK = os.path.abspath(sys.argv[1])
+DNF5_PREAMBLE = os.path.abspath(sys.argv[3]) if sys.argv[2:3] == ["dnf5"] else None
 TMP = tempfile.mkdtemp()
+
+
+def lock_command(root, archlist, request):
+    """The command line that locks request on top of root/below.lock.json, with the backend under test."""
+    if DNF5_PREAMBLE is None:
+        return [DNF_LOCK, f"--reposdir={root}/repos.d", f"--setopt=cachedir={root}/cache", "--releasever=9",
+                f"--archlist={archlist}", f"--lockfile={root}/below.lock.json", "-o", f"{root}/out.json", *request]
+    with open(f"{root}/dnf.conf", "w", encoding="utf-8") as f:
+        f.write("[main]\nbest=True\ninstall_weak_deps=True\nplugins=False\nprotected_packages=\nuser_agent=libdnf\n")
+    os.makedirs(f"{root}/tmp/root")
+    with open(DNF5_PREAMBLE, encoding="utf-8") as f:
+        preamble = [line.replace("@CONFDIR@", root).replace("@REPODIR@", root).replace("@TMP@", f"{root}/tmp")
+                    for line in f.read().splitlines()]
+    return [DNF_LOCK, *preamble, "lock", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
+            "-o", f"{root}/out.json", *request]
 LAST_OUT = {}  # the lockfile the last successful lock() wrote
 
 
@@ -80,9 +96,7 @@ def lock(case, repo, below, request, archlist="x86_64,i686,noarch"):
     write_repo(root, repo)
     with open(f"{root}/below.lock.json", "w", encoding="utf-8") as f:
         json.dump({"version": 1, "arch": archlist, "packages": below}, f)
-    r = subprocess.run([DNF_LOCK, f"--reposdir={root}/repos.d", f"--setopt=cachedir={root}/cache",
-                        "--releasever=9", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
-                        "-o", f"{root}/out.json", *request], capture_output=True, text=True, check=False)
+    r = subprocess.run(lock_command(root, archlist, request), capture_output=True, text=True, check=False)
     nevras = []
     obsoleted = []
     if r.returncode == 0:

@@ -42,6 +42,9 @@ struct Layers {
 /// The package's checksum as the lockfile's "integrity" (algorithm-base64) and, in `hex`, its "checksum".
 std::string integrity_of(const libdnf5::rpm::Package & pkg, std::string & hex);
 
+/// Compares an EVR string with the package's EVR, as rpm does.
+int evrcmp_str(const std::string & evr, const libdnf5::rpm::Package & pkg);
+
 /// Adds the lockfile at `path` to `layers`. Throws a CommandExitError when it cannot be read or is malformed.
 void load_lockfile(const std::string & path, const std::vector<std::string> & installonly, Layers & layers);
 

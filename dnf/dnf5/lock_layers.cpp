@@ -62,11 +62,30 @@ std::string key_of(const std::string & name, const std::optional<std::string> & 
     return name + "." + arch.value_or("");
 }
 
+// What a lockfile's version string holds, for comparing it with a package's.
+struct Evr {
+    std::string epoch, version, release;
+    const std::string & get_epoch() const { return epoch; }
+    const std::string & get_version() const { return version; }
+    const std::string & get_release() const { return release; }
+};
+
 }  // namespace
 
 std::shared_ptr<LayerPackage> Layers::find(const Package & pkg, const std::vector<std::string> & installonly) const {
     auto it = by_key.find(key_of(pkg.get_name(), pkg.get_arch(), pkg.get_nevra(), installonly));
     return it == by_key.end() ? nullptr : it->second;
+}
+
+int evrcmp_str(const std::string & evr, const Package & pkg) {
+    Evr parsed;
+    auto colon = evr.find(':');
+    parsed.epoch = colon == std::string::npos ? "" : evr.substr(0, colon);
+    auto rest = colon == std::string::npos ? evr : evr.substr(colon + 1);
+    auto dash = rest.rfind('-');
+    parsed.version = dash == std::string::npos ? rest : rest.substr(0, dash);
+    parsed.release = dash == std::string::npos ? "" : rest.substr(dash + 1);
+    return libdnf5::rpm::evrcmp(parsed, pkg);
 }
 
 void load_lockfile(const std::string & path, const std::vector<std::string> & installonly, Layers & layers) {
@@ -200,6 +219,34 @@ void add_header(std::ostream & out, const std::string & name, const std::string 
         << (dash == std::string::npos ? "-" : evr.substr(dash + 1)) << ' ' << arch << '\n';
 }
 
+// The layer holds the package at a NEVRA the repositories lack, so its own provides are unknown. Gives the synthetic
+// package those of the repositories' newest build of the name: sonames and file paths rarely change between builds, and
+// a package that provides only its name leaves the layer's other packages, whose requires come from the repositories,
+// unsatisfied. The build's provides on the name itself (name, name = evr, name(arch) = evr) are its own and are skipped.
+void add_provides_of_name(std::ostream & out, libdnf5::Base & base, const LayerPackage & inst, const std::vector<std::string> & archlist) {
+    PackageQuery query(base);
+    query.filter_name(inst.name);
+    if (inst.arch) {
+        query.filter_arch(*inst.arch);
+    } else if (!archlist.empty()) {
+        query.filter_arch(archlist);
+    }
+    query.filter_latest_evr();
+    if (query.empty()) {
+        return;
+    }
+    const auto provides = (*query.begin()).get_provides();
+    for (int i = 0; i < provides.size(); ++i) {
+        auto dep = provides.get(i).to_string();
+        auto base_name = dep.substr(0, dep.find(' '));
+        if (base_name.compare(0, inst.name.size(), inst.name) == 0 &&
+            (base_name.size() == inst.name.size() || base_name[inst.name.size()] == '(')) {
+            continue;
+        }
+        out << "=Prv: " << dep << '\n';
+    }
+}
+
 }  // namespace
 
 void load_system_repo(libdnf5::Base & base, const Layers & layers, const std::vector<std::string> & archlist) {
@@ -238,6 +285,7 @@ void load_system_repo(libdnf5::Base & base, const Layers & layers, const std::ve
             add_header(out, inst->name, inst->version.value_or("0"), inst->arch.value_or("noarch"));
             out << "=Prv: " << inst->name << " = " << inst->version.value_or("0") << '\n';
             out << "=Prv: " << inst->name << '\n';
+            add_provides_of_name(out, base, *inst, archlist);
             for (const auto & dep : inst->dependencies) {
                 out << "=Req: " << dep << '\n';
             }
