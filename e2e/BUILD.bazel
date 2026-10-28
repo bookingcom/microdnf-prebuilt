@@ -2,7 +2,7 @@ load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_in
 load("@rules_cc//cc:defs.bzl", "cc_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//e2e:lock_parity.bzl", "lock_parity")
+load("//e2e:lock_golden.bzl", "lock_golden")
 load("//microdnf:defs.bzl", "dnf_config", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
 load("//microdnf/private:package.bzl", "rpm_package")
 
@@ -21,15 +21,11 @@ sh_test(
     args = [
         "$(location //:microdnf)",
         "$(location //:rpm2archive)",
-        "$(location //:dnf_lock)",
         "$(location //:rpm2files)",
-        "$(location //:mark)",
         "$(location //:dnf5)",
     ],
     data = [
         "//:dnf5",
-        "//:dnf_lock",
-        "//:mark",
         "//:microdnf",
         "//:rpm2archive",
         "//:rpm2files",
@@ -113,20 +109,14 @@ sh_test(
     ] + _SANITIZER_DATA,
 )
 
-# Strips the sandbox directory number from a lockfile (see lock_parity.bzl).
+# Replaces the sandbox paths of a lockfile (see lock_golden.bzl and normalize_lock.sh).
 sh_binary(
     name = "normalize_lock",
     srcs = ["normalize_lock.sh"],
 )
 
-# The dnf_lock / dnf5 lockfile parity gate, one diff_test per rpm_lock case.
-test_suite(
-    name = "lock_parity_tests",
-    tags = ["lock_parity"],
-)
-
 # Step 2 test: Lockfile generation with RPM exclusion
-lock_parity(
+lock_golden(
     name = "test_generated_lock",
     arch = [
         "x86_64",
@@ -152,7 +142,7 @@ sh_test(
 )
 
 # Incremental lockfile tests
-lock_parity(
+lock_golden(
     name = "layer2_already_installed_lock",
     arch = [
         "x86_64",
@@ -166,7 +156,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "layer2_incremental_lock",
     arch = [
         "x86_64",
@@ -180,7 +170,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "layer2_both_lock",
     arch = [
         "x86_64",
@@ -197,7 +187,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "changed_integrity_lock",
     arch = [
         "x86_64",
@@ -228,23 +218,6 @@ sh_test(
     ],
 )
 
-# dnf_lock options: --excludepkgs, --module-enable, --best/--nobest, --forcearch, duplicate repos, weak deps
-sh_test(
-    name = "lock_features_test",
-    srcs = ["test_lock_features.sh"],
-    args = [
-        "$(location //:dnf_lock)",
-        "$(location //e2e/testdata:features-repo/repodata/repomd.xml)",
-    ],
-    data = [
-        "//:dnf_lock",
-        "//e2e/testdata:features-repo/repodata/repomd.xml",
-        "//e2e/testdata:features_repo_files",
-    ] + _SANITIZER_DATA,
-    # One section per shard (see SECTIONS in the script).
-    shard_count = 6,
-)
-
 dnf_config(
     name = "features_dnf_config",
     module_platform_id = "platform:el9",
@@ -253,14 +226,13 @@ dnf_config(
     repo_files = ["//e2e/testdata:features_repo_files"],
 )
 
-# The same cases through `dnf5 lock`.
+# `dnf5 lock` options: excludepkgs, module enable, best/nobest, forcearch, duplicate repos, weak deps.
 sh_test(
-    name = "lock_features_dnf5_test",
+    name = "lock_features_test",
     srcs = ["test_lock_features.sh"],
     args = [
         "$(location //:dnf5)",
         "$(location //e2e/testdata:features-repo/repodata/repomd.xml)",
-        "dnf5",
         "$(rootpath :features_dnf_config)",
     ],
     data = [
@@ -273,8 +245,8 @@ sh_test(
     shard_count = 6,
 )
 
-# The same options through the rpm_lock attributes
-lock_parity(
+# The same options through the rpm_lock attributes (golden lockfiles in //e2e/testdata)
+lock_golden(
     name = "attrs_excludepkgs_lock",
     arch = [
         "x86_64",
@@ -288,7 +260,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:features_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "attrs_nobest_lock",
     arch = [
         "x86_64",
@@ -302,7 +274,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:features_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "attrs_noweak_lock",
     arch = [
         "x86_64",
@@ -316,7 +288,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:features_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "attrs_module_lock",
     arch = [
         "x86_64",
@@ -331,7 +303,7 @@ lock_parity(
     repo_files = ["//e2e/testdata:features_repo_files"],
 )
 
-lock_parity(
+lock_golden(
     name = "attrs_forcearch_lock",
     arch = [
         "x86_64",
@@ -538,24 +510,6 @@ test_suite(
     tests = [":downstream_e2e_tests_bazel_9_3_1"],
 )
 
-sh_test(
-    name = "lock_direct_test",
-    srcs = ["test_lock_direct.sh"],
-    args = [
-        "$(rootpath //:dnf_lock)",
-        "$(rootpath //e2e/testdata:test.repo)",
-        "$(rootpath //e2e/testdata:repo/repodata/repomd.xml)",
-        "$(rootpath :test_generated_lock.lock.json)",
-    ],
-    data = [
-        ":test_generated_lock.lock.json",
-        "//:dnf_lock",
-        "//e2e/testdata:repo/repodata/repomd.xml",
-        "//e2e/testdata:test.repo",
-        "//e2e/testdata:test_repo_files",
-    ] + _SANITIZER_DATA,
-)
-
 dnf_config(
     name = "test_dnf_config",
     releasever = "9",
@@ -563,16 +517,15 @@ dnf_config(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-# The same case through `dnf5 lock`.
+# `dnf5 lock` run in the target configuration, where libdnf5's assertions are compiled in.
 sh_test(
-    name = "lock_direct_dnf5_test",
+    name = "lock_direct_test",
     srcs = ["test_lock_direct.sh"],
     args = [
         "$(rootpath //:dnf5)",
         "$(rootpath //e2e/testdata:test.repo)",
         "$(rootpath //e2e/testdata:repo/repodata/repomd.xml)",
         "$(rootpath :test_generated_lock.lock.json)",
-        "dnf5",
         "$(rootpath :test_dnf_config)",
     ],
     data = [
@@ -586,27 +539,13 @@ sh_test(
     ] + _SANITIZER_DATA,
 )
 
+# `dnf5 lock --lockfile` on small metadata-only repositories.
 sh_test(
     name = "lock_layers_test",
     srcs = ["test_lock_layers.sh"],
     args = [
         "$(rootpath :test_lock_layers.py)",
-        "$(rootpath //:dnf_lock)",
-    ],
-    data = [
-        ":test_lock_layers.py",
-        "//:dnf_lock",
-    ] + _SANITIZER_DATA,
-)
-
-# The same layer cases through `dnf5 lock`.
-sh_test(
-    name = "lock_layers_dnf5_test",
-    srcs = ["test_lock_layers.sh"],
-    args = [
-        "$(rootpath :test_lock_layers.py)",
         "$(rootpath //:dnf5)",
-        "dnf5",
         "$(rootpath :ol9_dnf_config)",
     ],
     data = [

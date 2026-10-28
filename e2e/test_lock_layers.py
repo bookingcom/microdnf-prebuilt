@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Runs dnf_lock --lockfile on small metadata-only repos and checks what it locks on top of the layer below.
+"""Runs `dnf5 lock --lockfile` on small metadata-only repos and checks what it locks on top of the layer below.
 
-Args: <dnf_lock>, or <dnf5> dnf5 <preamble.args> to run `dnf5 lock` with the preamble of a dnf_config.
+Args: <dnf5> <preamble.args of a dnf_config>.
 """
 
 import base64
@@ -13,24 +13,23 @@ import subprocess
 import sys
 import tempfile
 
-DNF_LOCK = os.path.abspath(sys.argv[1])
-DNF5_PREAMBLE = os.path.abspath(sys.argv[3]) if sys.argv[2:3] == ["dnf5"] else None
+DNF5 = os.path.abspath(sys.argv[1])
+DNF5_PREAMBLE = os.path.abspath(sys.argv[2])
 TMP = tempfile.mkdtemp()
 
 
 def lock_command(root, archlist, request):
-    """The command line that locks request on top of root/below.lock.json, with the backend under test."""
-    if DNF5_PREAMBLE is None:
-        return [DNF_LOCK, f"--reposdir={root}/repos.d", f"--setopt=cachedir={root}/cache", "--releasever=9",
-                f"--archlist={archlist}", f"--lockfile={root}/below.lock.json", "-o", f"{root}/out.json", *request]
+    """The command line that locks request on top of root/below.lock.json."""
     with open(f"{root}/dnf.conf", "w", encoding="utf-8") as f:
         f.write("[main]\nbest=True\ninstall_weak_deps=True\nplugins=False\nprotected_packages=\nuser_agent=libdnf\n")
     os.makedirs(f"{root}/tmp/root")
     with open(DNF5_PREAMBLE, encoding="utf-8") as f:
         preamble = [line.replace("@CONFDIR@", root).replace("@REPODIR@", root).replace("@TMP@", f"{root}/tmp")
                     for line in f.read().splitlines()]
-    return [DNF_LOCK, *preamble, "lock", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
+    return [DNF5, *preamble, "lock", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
             "-o", f"{root}/out.json", *request]
+
+
 LAST_OUT = {}  # the lockfile the last successful lock() wrote
 
 
@@ -84,7 +83,7 @@ def write_repo(root, pkgs):
 
 
 def locked(name, ver="1", arch="noarch"):
-    """A lockfile entry for a package of write_repo, as dnf_lock writes it."""
+    """A lockfile entry for a package of write_repo, as `dnf5 lock` writes it."""
     integrity = "sha256-" + base64.b64encode(bytes.fromhex(pkgid(name, ver, arch))).decode()
     return {"name": name, "version": f"{ver}-1", "arch": arch, "nevra": f"{name}-{ver}-1.{arch}",
             "integrity": integrity}

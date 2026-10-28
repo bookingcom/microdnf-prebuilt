@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# dnf_lock option tests against the synthetic "features" repository:
+# `dnf5 lock` option tests against the synthetic "features" repository:
 # --excludepkgs, --module-enable, --best/--nobest, --forcearch and equal-priority
 # repos that carry the same packages, and weak dependencies.
-# Args: <dnf_lock> <repomd.xml>
-#   or: <dnf5> <repomd.xml> dnf5 <dnf.conf of a dnf_config>
-# The cases are written in dnf_lock's flags; for dnf5 they are translated (see run_lock_dnf5).
+# Args: <dnf5> <repomd.xml> <dnf.conf of a dnf_config>
+# The cases are written in the flags of the former dnf_lock tool; they are translated (see run_lock).
 set -euo pipefail
 
-DNF_LOCK="$1"
+DNF5="$1"
 REPOMD="$2"          # .../features-repo/repodata/repomd.xml
-BACKEND="${3:-libdnf}"
-DNF_CONF="${4:-}"
-if [ "${BACKEND}" = dnf5 ]; then source "$(dirname "$0")/dnf5_lib.sh"; fi
+DNF_CONF="$3"
+source "$(dirname "$0")/dnf5_lib.sh"
 
 abspath() { (cd "$(dirname "$1")" && echo "$(pwd -P)/$(basename "$1")"); }
 REPO_DIR="$(dirname "$(dirname "$(abspath "${REPOMD}")")")"
 
 WORK="${TEST_TMPDIR:-$(mktemp -d)}/lock_features"
 rm -rf "${WORK}"
-mkdir -p "${WORK}/repos.d" "${WORK}/cache"
+mkdir -p "${WORK}/repos.d"
 cat > "${WORK}/repos.d/features.repo" <<REPO
 [features]
 name=features
@@ -38,10 +36,10 @@ FAILURES=0
 OUT="${WORK}/out.json"
 ERR="${WORK}/err.txt"
 
-# `dnf5 lock` under the dnf_config preamble. dnf_lock's flags map as follows: --excludepkgs is dnf5's --exclude,
-# dnf_lock's --exclude is `lock --prune`, --nobest is --no-best, --reposdir is --setopt=reposdir=, and the solve
+# `dnf5 lock` under the dnf_config preamble. The flags of the cases map as follows: --excludepkgs is dnf5's --exclude,
+# the old --exclude is `lock --prune`, --nobest is --no-best, --reposdir is --setopt=reposdir=, and the solve
 # architecture (--forcearch, else the first non-noarch of ARCHLIST) is --forcearch.
-run_lock_dnf5() {
+run_lock() {
   local globals=() lockargs=() forcearch="" a
   for a in "$@"; do
     case "${a}" in
@@ -54,6 +52,9 @@ run_lock_dnf5() {
       *) lockargs+=("${a}") ;;
     esac
   done
+  # A section that sets REPOSDIR (the archrepo and duplicate-repo cases) swaps the repositories, as dnf_lock's
+  # --reposdir did; the default one is the features repository of the dnf_config.
+  if [ "${REPOSDIR}" != "${WORK}/repos.d" ]; then globals+=(--setopt=reposdir="${REPOSDIR}"); fi
   if [ -z "${forcearch}" ]; then
     forcearch="$(tr , '\n' <<<"${ARCHLIST}" | grep -vx noarch | head -n 1)"
   fi
@@ -61,17 +62,8 @@ run_lock_dnf5() {
   mkdir -p "${WORK}/dnf5tmp/root"
   dnf5_preamble "${DNF_CONF}" "${REPO_DIR}" "${WORK}/dnf5tmp"
   # ${a[@]+"${a[@]}"}: an empty array is unbound under set -u in bash 3.2 (macOS).
-  "${DNF_LOCK}" "${PREAMBLE[@]}" --forcearch="${forcearch}" ${globals[@]+"${globals[@]}"} \
+  "${DNF5}" "${PREAMBLE[@]}" --forcearch="${forcearch}" ${globals[@]+"${globals[@]}"} \
     lock --archlist="${ARCHLIST}" -o "${OUT}" ${lockargs[@]+"${lockargs[@]}"} 2>"${ERR}"
-}
-
-run_lock() {
-  if [ "${BACKEND}" = dnf5 ]; then
-    run_lock_dnf5 "$@"
-    return
-  fi
-  "${DNF_LOCK}" --reposdir="${REPOSDIR}" --setopt=cachedir="${WORK}/cache" \
-    --releasever=9 --archlist="${ARCHLIST}" -o "${OUT}" "$@" 2>"${ERR}"
 }
 
 nevras() {
@@ -86,12 +78,12 @@ fail() {
   FAILURES=$((FAILURES + 1))
 }
 
-# expect_lock "description" "expected sorted NEVRAs" dnf_lock-args...
+# expect_lock "description" "expected sorted NEVRAs" case-args...
 expect_lock() {
   local desc="$1" expected="$2"
   shift 2
   if ! run_lock "$@"; then
-    fail "${desc}: dnf_lock exited non-zero" "$(cat "${ERR}")"
+    fail "${desc}: dnf5 lock exited non-zero" "$(cat "${ERR}")"
     return
   fi
   local got
@@ -103,12 +95,12 @@ expect_lock() {
   fi
 }
 
-# expect_error "description" "stderr substring" dnf_lock-args...
+# expect_error "description" "stderr substring" case-args...
 expect_error() {
   local desc="$1" needle="$2"
   shift 2
   if run_lock "$@"; then
-    fail "${desc}: dnf_lock succeeded, expected an error"
+    fail "${desc}: dnf5 lock succeeded, expected an error"
   elif ! grep -qF -- "${needle}" "${ERR}"; then
     fail "${desc}: error does not mention '${needle}'" "$(cat "${ERR}")"
   else
@@ -125,9 +117,7 @@ section_best() {
   expect_lock "--setopt=best=False falls back too" "bestapp-1.0-1.noarch" bestapp --setopt=best=False
   expect_error "--nobest keeps a pinned version (no fallback to bestapp-1.0)" \
     "missing-lib" bestapp-2.0-1.noarch --nobest
-  # Only the wording differs: dnf5's parser names the flag --no-best.
-  local conflict="Argument --nobest is not allowed with argument --best"
-  if [ "${BACKEND}" = dnf5 ]; then conflict='"--no-best" not allowed together with named argument "--best"'; fi
+  local conflict='"--no-best" not allowed together with named argument "--best"'
   expect_error "--best and --nobest conflict" "${conflict}" \
     bestapp --best --nobest
   expect_lock "--nobest still takes the newest installable candidate" \
@@ -231,7 +221,7 @@ section_weakdeps() {
   echo "--- weak dependencies"
   local weak_both="weakapp-1.0-1.noarch weakdep-1.0-1.noarch"
   # dnf with install_weak_deps=True (the EL default) installs the Recommends of what
-  # it installs. dnf_lock passes no flag for it, so this is libsolv's own default.
+  # it installs; dnf5 lock passes no flag for it, so this is libsolv's own default.
   expect_lock "Recommends are installed and locked, as dnf does" "${weak_both}" weakapp
   # dnf --setopt=install_weak_deps=<bool>: OptionBool takes 0/1, false/true, False/True, no/yes, off/on.
   for off in False false 0 no off; do
@@ -280,7 +270,7 @@ for i in "${!SECTIONS[@]}"; do
 done
 
 if [ "${FAILURES}" -ne 0 ]; then
-  echo "${FAILURES} dnf_lock feature check(s) failed"
+  echo "${FAILURES} dnf5 lock feature check(s) failed"
   exit 1
 fi
-echo "dnf_lock feature tests passed"
+echo "dnf5 lock feature tests passed"
