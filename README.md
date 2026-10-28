@@ -39,6 +39,17 @@ bazel run //:dnf_lock -- -o lockfile.json --setopt=reposdir=/path/to/repos.d ed 
 bazel run //:microdnf -- lock -o lockfile.json --setopt=reposdir=/path/to/repos.d ed bash
 ```
 
+#### dnf options
+| Option | Behaviour |
+| --- | --- |
+| `--excludepkgs=<glob,…>` / `--setopt=excludepkgs=…` | dnf `excludepkgs`: matching packages are invisible to the solver (a cut-off like `ca-certificates-2026*`). Repo-scoped `--setopt=<repo>.excludepkgs=…` also works. Unlike `--exclude`, which prunes resolved packages out of the lock graph. |
+| `--module-enable=<name:stream>` | Enables a module stream before resolving, like `dnf module enable`. The platform comes from `/etc/os-release`'s `PLATFORM_ID` or `--setopt=module_platform_id=platform:el9`. |
+| `--best` / `--nobest` | **Best is the default for the whole transaction**, as in dnf with EL's `best=True`: every requested package must resolve to its newest candidate and dependencies may not be silently held back on an older version. To opt out, pass `--nobest` (or `--setopt=best=False`, or `nobest = True` on `rpm_lock`); the solver may then fall back to older candidates. `--nobest` keeps the constraints of the request: `foo-2.0-1.noarch --nobest` never falls back to `foo-1.0`. `--best` together with `--nobest` is an error. |
+| `--forcearch=<arch>` | Solver architecture. It defaults to the first non-`noarch`/`src` `--archlist` entry, so an x86_64 lock resolves on an arm64 host. The same architecture feeds `$basearch` in repo URLs (`i686` maps to `i386`, `armv7hl` to `armhfp`); an explicit `DNF_VAR_basearch` in the environment is overridden. |
+
+Any other `--setopt=<key>=<value>` or `<repo>.<key>=<value>` goes to libdnf. `rpm_lock` exposes the same knobs as `excludepkgs`,
+`forcearch`, `module_enable`, `module_platform_id` and `nobest` attributes.
+
 ### 3. Hermetic Host Portability
 - Automatic hermetic fallback configuration when `/usr/lib/rpm/rpmrc` is absent on host systems.
 - Unprivileged user fallback redirecting caches to `~/.cache/microdnf` and repos to a fallback directory when `/etc/yum.repos.d` is missing.

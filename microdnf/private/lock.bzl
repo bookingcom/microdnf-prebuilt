@@ -2,6 +2,21 @@
 
 load("//microdnf/private:providers.bzl", "RpmLockFileInfo")
 
+def _solver_args(ctx):
+    """dnf_lock flags shaping the solve (dnf semantics), shared by build and run."""
+    args = []
+    if ctx.attr.forcearch:
+        args.append("--forcearch=" + ctx.attr.forcearch)
+    for pattern in ctx.attr.excludepkgs:
+        args.append("--excludepkgs=" + pattern)
+    for spec in ctx.attr.module_enable:
+        args.append("--module-enable=" + spec)
+    if ctx.attr.module_platform_id:
+        args.append("--setopt=module_platform_id=" + ctx.attr.module_platform_id)
+    if ctx.attr.nobest:
+        args.append("--nobest")
+    return args
+
 def _rpm_lock_impl(ctx):
     out = ctx.outputs.out
     if not out:
@@ -68,6 +83,9 @@ mkdir -p "${CACHE_DIR}"
     for lf in ctx.files.lock_files:
         args.add("--lockfile=" + lf.path)
 
+    solver_args = _solver_args(ctx)
+    args.add_all(solver_args)
+
     for pkg in ctx.attr.packages:
         args.add(pkg)
 
@@ -121,6 +139,7 @@ mkdir -p "${CACHE_DIR}"
   --releasever="%s" \\
   %s \\
   %s \\
+  %s \\
   %s
 
 mkdir -p "$(dirname "${DEST}")"
@@ -136,6 +155,7 @@ echo "Lockfile updated at: ${DEST}"
         ctx.attr.releasever,
         " ".join(["--exclude='%s'" % e for e in ctx.attr.exclude]),
         " ".join(["--lockfile='%s'" % lf.short_path for lf in ctx.files.lock_files]),
+        " ".join(["'%s'" % a for a in solver_args]),
         " ".join(["'%s'" % p for p in ctx.attr.packages]),
     )
 
@@ -173,6 +193,13 @@ rpm_lock = rule(
             default = [],
             doc = "Optional packages to exclude and prune from the dependency tree.",
         ),
+        "excludepkgs": attr.string_list(
+            default = [],
+            doc = "NEVRA globs hidden from the solver, like dnf excludepkgs= (e.g. release cut-offs).",
+        ),
+        "forcearch": attr.string(
+            doc = "Architecture to solve for instead of the host's (default: first non-noarch entry of arch).",
+        ),
         "lock_files": attr.label_list(
             default = [],
             allow_files = [".json"],
@@ -183,6 +210,17 @@ rpm_lock = rule(
             executable = True,
             cfg = "exec",
             doc = "Underlying lock tool executable.",
+        ),
+        "module_enable": attr.string_list(
+            default = [],
+            doc = "Module streams to enable before resolving (NAME:STREAM), like dnf module enable.",
+        ),
+        "module_platform_id": attr.string(
+            doc = "Platform module (e.g. 'platform:el9') that module streams are resolved against.",
+        ),
+        "nobest": attr.bool(
+            default = False,
+            doc = "Allow older candidates when the newest requested package is not installable.",
         ),
         "out": attr.output(
             mandatory = False,
