@@ -1,0 +1,11 @@
+{
+    "homepage": "https://github.com/rpm-software-management/libpkgmanifest",
+    "maintainers": [],
+    "repository": [
+        "github:rpm-software-management/libpkgmanifest"
+    ],
+    "versions": [
+        "0.6.1.bcr.1"
+    ],
+    "yanked_versions": {}
+}

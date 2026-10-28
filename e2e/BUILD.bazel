@@ -15,8 +15,10 @@ sh_test(
         "$(location //:dnf_lock)",
         "$(location //:rpm2files)",
         "$(location //:mark)",
+        "$(location //:dnf5)",
     ],
     data = [
+        "//:dnf5",
         "//:dnf_lock",
         "//:mark",
         "//:microdnf",

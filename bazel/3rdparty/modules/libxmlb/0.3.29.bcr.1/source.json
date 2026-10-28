@@ -1,0 +1,11 @@
+{
+    "url": "https://github.com/hughsie/libxmlb/archive/refs/tags/0.3.29.tar.gz",
+    "integrity": "sha256-te+3j8gDNnKCZTLg6B4VndOwG+fow2FuLf7+/GbSjtY=",
+    "strip_prefix": "libxmlb-0.3.29",
+    "overlay": {
+        "BUILD.bazel": "sha256-zB/DhthGxSSZvjkwhGZ+cImq0FV8HjMYYAy2ZJbwOgs=",
+        "MODULE.bazel": "sha256-KksaiZuEqI9rPngZ9etlGVNBy7LHaJju+7iwGmy51kY=",
+        "config.h": "sha256-wjAH0CYFjL1SPn8Eg3RexEJlt3Ob4wFvXCrd8+cYBuo=",
+        "src/xb-version.h": "sha256-AIceYtb7pjsdTaUZllOkV+jlllevafQWUzmQpTXnqPA="
+    }
+}

@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "libpkgmanifest",
+    srcs = glob([
+        "src/**/*.cpp",
+        "src/**/*.hpp",
+    ]),
+    hdrs = glob([
+        "include/**/*.hpp",
+    ]),
+    copts = [
+        "-std=c++20",
+        "-include",
+        "stdexcept",
+        "-Wno-unused-parameter",
+    ],
+    includes = [
+        "include",
+        "src",
+    ],
+    deps = [
+        "@rpm//:rpm",
+        "@rpm//:rpmio",
+        "@yaml-cpp//:yaml-cpp",
+    ],
+    visibility = ["//visibility:public"],
+)

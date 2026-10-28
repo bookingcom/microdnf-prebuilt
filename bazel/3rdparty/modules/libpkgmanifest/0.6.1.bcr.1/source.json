@@ -1,0 +1,9 @@
+{
+    "url": "https://github.com/rpm-software-management/libpkgmanifest/archive/refs/tags/v0.6.1.tar.gz",
+    "integrity": "sha256-48P9Jlh2BMhf3lBelXAGxdTlWSzRS/ahlJA2nZkVx10=",
+    "strip_prefix": "libpkgmanifest-0.6.1",
+    "overlay": {
+        "BUILD.bazel": "sha256-+SDJV22YYcLSq8PRYhMXccZA3p2ugd9+drOH819CAB4=",
+        "MODULE.bazel": "sha256-fbWz1VkTUfjjWA/0kJqcpEXkdm+YeYe2O57nzuHW9Rs="
+    }
+}

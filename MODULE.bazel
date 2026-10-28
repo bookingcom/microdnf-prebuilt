@@ -95,16 +95,29 @@ bazel_dep(name = "gpgme", version = "1.24.2.bcr.11", dev_dependency = True)
 bazel_dep(name = "popt", version = "1.19.0.bcr.7", dev_dependency = True)
 bazel_dep(name = "file", version = "5.46.0.bcr.4", dev_dependency = True)
 bazel_dep(name = "json-c", version = "0.18.0.bcr.3", dev_dependency = True)
-bazel_dep(name = "rpm", version = "4.18.2.bcr.13", dev_dependency = True)
+bazel_dep(name = "rpm", version = "4.18.2.bcr.14", dev_dependency = True)
 bazel_dep(name = "libsolv", version = "0.7.32.bcr.14", dev_dependency = True)
 bazel_dep(name = "librepo", version = "1.19.0.bcr.11", dev_dependency = True)
 bazel_dep(name = "libmodulemd", version = "2.15.0.bcr.15", dev_dependency = True)
 bazel_dep(name = "libdnf", version = "0.74.0.bcr.27", dev_dependency = True)
+bazel_dep(name = "fmt", version = "12.2.0.bcr.1", dev_dependency = True)
+bazel_dep(name = "yaml-cpp", version = "0.9.0.bcr.1", dev_dependency = True)
+bazel_dep(name = "gperf", version = "3.1.bcr.2", dev_dependency = True)
+bazel_dep(name = "toml11", version = "4.4.0.bcr.1", dev_dependency = True)
+bazel_dep(name = "libpkgmanifest", version = "0.6.1.bcr.1", dev_dependency = True)
+bazel_dep(name = "libxmlb", version = "0.3.29.bcr.1", dev_dependency = True)
+bazel_dep(name = "appstream", version = "1.0.6.bcr.1", dev_dependency = True)
+bazel_dep(name = "dnf5", version = "5.4.6.0.bcr.1", dev_dependency = True, repo_name = "dnf5_src")
 
 # Enforce 1.51.0.bcr.5 across transitive 3rdparty dependencies (libassuan, librepo, gpgme)
 single_version_override(
     module_name = "libgpg-error",
     version = "1.51.0.bcr.5",
+)
+
+single_version_override(
+    module_name = "rpm",
+    version = "4.18.2.bcr.14",
 )
 
 # Bazel Integration Tests
@@ -174,6 +187,11 @@ use_repo(microdnf, "microdnf_src")
 microdnf_prebuilt = use_extension("//microdnf:extensions.bzl", "microdnf_prebuilt_extension")
 use_repo(
     microdnf_prebuilt,
+    "dnf5",
+    "dnf5_linux_amd64",
+    "dnf5_linux_arm64",
+    "dnf5_osx_amd64",
+    "dnf5_osx_arm64",
     "dnf_lock",
     "dnf_lock_linux_amd64",
     "dnf_lock_linux_arm64",

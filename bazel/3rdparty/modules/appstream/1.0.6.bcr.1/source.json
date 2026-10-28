@@ -1,0 +1,12 @@
+{
+    "url": "https://github.com/ximion/appstream/archive/refs/tags/v1.0.6.tar.gz",
+    "integrity": "sha256-MolWjuqqhDZdz8imvitUepq+Bc7G0/CLYvOegypufLk=",
+    "strip_prefix": "appstream-1.0.6",
+    "overlay": {
+        "BUILD.bazel": "sha256-38ufHbcwtUdwAvpcvQvLoUFJpBUFae1e0DTeydYvLJM=",
+        "MODULE.bazel": "sha256-cbVfSTRo3I8yLox3OE3Sq/od6Li6J92QJ5S8iR03t+0=",
+        "config.h": "sha256-bPm7zqmer0JWr4DQq09v35NFjEQlWw/Yj4zgFvm2Xwo=",
+        "rules.bzl": "sha256-C2/+mmuXbmyoPkZ+VZoxGmkTEqa7KamT/b8Sasw7K5k=",
+        "src/as-version.h": "sha256-e7RUDsVxtpjYM7kA/mxWMC/A0wcoDbaZ7dvnOsvPgHs="
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "homepage": "https://github.com/ximion/appstream",
+    "maintainers": [],
+    "repository": [
+        "github:ximion/appstream"
+    ],
+    "versions": [
+        "1.0.6.bcr.1"
+    ],
+    "yanked_versions": {}
+}

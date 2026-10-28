@@ -1,13 +1,14 @@
 {
-    "url": "https://ftp.osuosl.org/pub/rpm/releases/rpm-4.18.x/rpm-4.18.2.tar.bz2",
+    "url": "http://ftp.osuosl.org/pub/rpm/releases/rpm-4.18.x/rpm-4.18.2.tar.bz2",
     "mirror_urls": [
+        "https://ftp.osuosl.org/pub/rpm/releases/rpm-4.18.x/rpm-4.18.2.tar.bz2",
         "https://ftp.icm.edu.pl/packages/rpm/releases/rpm-4.18.x/rpm-4.18.2.tar.bz2"
     ],
     "integrity": "sha256-un7uG8LG+DvnPApA0VnGJcuu2XazrARCM0BPslrhuXk=",
     "strip_prefix": "rpm-4.18.2",
     "overlay": {
-        "BUILD.bazel": "sha256-2mBRjufknAGczA7vaQpJ25DpwU1aImzvg2gbc7zgX0o=",
-        "MODULE.bazel": "sha256-+1fuMpUcrX2tVJKhTGKqzxOge0UJDBobYBSeNLcTP0M=",
+        "BUILD.bazel": "sha256-pQcyFIi3kfWYF+kjTu+/8jjyHDgb8LN2Nv/zaZYAkNQ=",
+        "MODULE.bazel": "sha256-5SnTl+vFJtGUtMLkjfYZXvy63V06tLcveTAcJoGmBMY=",
         "config.h": "sha256-TMIlbetp1m8D9rDCac5qHf9lP5bMCgGDPqNlqXeqnQo=",
         "rpm_config.h": "sha256-R+U1zv92i9wE1H8ga38+2A9s65xX2/nvisZcaGVXGO8="
     }

@@ -1,0 +1,10 @@
+module(
+    name = "libxmlb",
+    version = "0.3.29.bcr.1",
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "glib", version = "2.84.0.bcr.6")
+bazel_dep(name = "xz", version = "5.4.5.bcr.9")
+bazel_dep(name = "zstd", version = "1.5.7.bcr.3")
