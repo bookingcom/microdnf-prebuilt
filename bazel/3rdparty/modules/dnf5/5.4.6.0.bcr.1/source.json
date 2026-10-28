@@ -17,8 +17,8 @@
         "libdnf5__module__nsvcap.cpp.patch": "sha256-FIRa9MHuq8XDTuB4/THDrmDJr1zDBJ4/bLrApKYBsyk=",
         "libdnf5__plugin__plugins.cpp.patch": "sha256-JwzqcUZEtECsfbcPZ4hBmRsND/6+vn0MnE/rhGXtXdM=",
         "libdnf5__plugin__utils.cpp.patch": "sha256-ZRemWr0PQG8LVeSnf/0Uor9h7c2PZNAtJd65k3Vcr/w=",
-        "libdnf5__repo__repo_sack.cpp.patch": "sha256-WMzcKIcANGJ4dhw67uUOPcqKsFDtbNeAuErrUaT3yp8=",
-        "libdnf5__repo__repo_sack.hpp.patch": "sha256-IV8vM6xIZ11eKXAoezFETKTUGKWve+vA/G0fZ0f7PVM=",
+        "libdnf5__repo__repo_sack.cpp.patch": "sha256-JrHElJSvB7aZOdBgyLyEwvNdZ1vegNin73eCJfLSyVw=",
+        "libdnf5__repo__repo_sack.hpp.patch": "sha256-BBGGi5HbEu4nXQqPBdmogSymGomDjqtMh1bNijfhqJk=",
         "libdnf5__utils__fs__utils.hpp.patch": "sha256-xo4Mkat1QP8KKv3AYqmnSgrSKZ+rgz3x0HuPgNpIkb8=",
         "libdnf5__utils__system.cpp.patch": "sha256-SLnl0/+AqADrpYQvFn8CHhmiKeSL76Fj2TYFvcaniGU="
     },

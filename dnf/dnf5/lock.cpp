@@ -191,6 +191,14 @@ Providers providers_of(
     return result;
 }
 
+std::string problems_message(libdnf5::base::Transaction & transaction) {
+    std::string message = "Error resolving package dependencies:";
+    for (const auto & problem : transaction.get_resolve_logs_as_strings()) {
+        message += "\n" + problem;
+    }
+    return message;
+}
+
 json_object * json_strings(const NameSet & items) {
     json_object * array = json_object_new_array();
     for (const auto & item : items) {
@@ -272,6 +280,20 @@ void LockCommand::run() {
     }
     auto & base = get_context().get_base();
     const bool best = base.get_config().get_best_option().get_value();
+    const bool weak_deps = base.get_config().get_install_weak_deps_option().get_value();
+
+    // Enabling a stream takes a resolve of its own: it filters the packages of the other streams out of the queries below.
+    if (!module_enable.empty()) {
+        libdnf5::Goal module_goal(base);
+        for (const auto & spec : module_enable) {
+            module_goal.add_module_enable(spec, libdnf5::GoalJobSettings());
+        }
+        auto module_transaction = module_goal.resolve();
+        if (module_transaction.get_problems() != libdnf5::GoalProblem::NO_PROBLEM) {
+            throw libdnf5::cli::CommandExitError(1, M_("{}"), problems_message(module_transaction));
+        }
+        base.get_repo_sack()->reapply_module_filtering();
+    }
 
     libdnf5::ResolveSpecSettings spec_settings;
     spec_settings.set_with_nevra(true);
@@ -339,11 +361,7 @@ void LockCommand::run() {
         }
         auto transaction = goal.resolve();
         if (transaction.get_problems() != libdnf5::GoalProblem::NO_PROBLEM) {
-            std::string message = "Error resolving package dependencies:";
-            for (const auto & problem : transaction.get_resolve_logs_as_strings()) {
-                message += "\n" + problem;
-            }
-            throw libdnf5::cli::CommandExitError(1, M_("{}"), message);
+            throw libdnf5::cli::CommandExitError(1, M_("{}"), problems_message(transaction));
         }
         for (const auto & tp : transaction.get_transaction_packages()) {
             using Action = libdnf5::transaction::TransactionItemAction;
@@ -361,12 +379,66 @@ void LockCommand::run() {
         locked_names.insert(pkg.get_name());
     }
 
+    // Without --prune every package the solver installs is kept, as dnf installs it. With it, what is only reachable
+    // through a pruned package is trimmed.
+    const bool trim = !prune.empty();
+    NameSet pruned;
+    for (const auto & name : prune) {
+        if (!directly_requested.count(name)) {
+            pruned.insert(name);
+        }
+    }
+
     std::map<std::string, Providers> direct;
+    // Weak edges (Recommends, reverse Supplements), only followed to find what to trim; they stay out of "dependencies"
+    // as the package does not require them.
+    std::map<std::string, NameSet> weak;
     for (const auto & pkg : resolved) {
         auto name = pkg.get_name();
         direct[name] = providers_of(base, pkg.get_requires(), name, locked, installed);
+        if (trim && weak_deps) {
+            for (const auto & prov : providers_of(base, pkg.get_recommends(), name, locked, {}).names) {
+                weak[name].insert(prov);
+            }
+            for (const auto & prov : providers_of(base, pkg.get_supplements(), name, locked, {}).names) {
+                weak[prov].insert(name);
+            }
+        }
     }
-    const NameSet & reachable = locked_names;
+
+    NameSet reachable;
+    std::deque<std::string> queue;
+    auto reach = [&](const std::string & name) {
+        if (reachable.insert(name).second) {
+            queue.push_back(name);
+        }
+    };
+    bool any_requested = false;
+    for (const auto & name : directly_requested) {
+        if (locked_names.count(name)) {
+            reach(name);
+            any_requested = true;
+        }
+    }
+    // Without a pruned package, or with every request already in a layer below, all new packages are kept.
+    if (!trim || !any_requested) {
+        for (const auto & name : locked_names) {
+            if (!pruned.count(name)) {
+                reach(name);
+            }
+        }
+    }
+    while (!queue.empty()) {
+        auto current = queue.front();
+        queue.pop_front();
+        for (const auto * edges : {&direct[current].names, &weak[current]}) {
+            for (const auto & dep : *edges) {
+                if (!pruned.count(dep) && locked_names.count(dep)) {
+                    reach(dep);
+                }
+            }
+        }
+    }
 
     json_object * root = json_object_new_object();
     json_object_object_add(root, "version", json_object_new_int(1));
