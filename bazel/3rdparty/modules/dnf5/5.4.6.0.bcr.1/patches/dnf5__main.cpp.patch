@@ -11,7 +11,7 @@
 +// (aliases.d) and external dnf5 plugins (DNF5_PLUGINS_DIR) are intentionally disabled for the same reason.
 +extern "C" {
 +#define DNF5_BUILTIN_PLUGINS(X) \
-+    X(changelog) X(config_manager) X(copr) X(repoclosure) X(repomanage) X(reposync)
++    X(changelog) X(config_manager) X(copr) X(repoclosure) X(repomanage) X(reposync) X(lock)
 +#define DNF5_DECLARE_BUILTIN_PLUGIN(name)                                         \
 +    IPlugin * name##_dnf5_plugin_new_instance(ApplicationVersion, Context &);     \
 +    void name##_dnf5_plugin_delete_instance(IPlugin *);

@@ -75,4 +75,9 @@ fi
 echo "=== rpmdb is created inside the installroot ==="
 test -f "${WORK}/root/var/lib/rpm/rpmdb.sqlite"
 
+echo "=== the lock command is linked in ==="
+help="$("${DNF5}" lock --help)"
+grep -q -- "--archlist" <<<"${help}"
+grep -q -- "--module-enable" <<<"${help}"
+
 echo "dnf5 smoke test passed"

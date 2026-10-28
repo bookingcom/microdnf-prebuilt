@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 load(":defs.bzl", "domain", "entry_points")
 
 package(default_visibility = ["//visibility:public"])
@@ -159,14 +159,17 @@ _CMD_PLUGINS = [
     for (name, dir, gettext, defines, deps) in _CMD_PLUGINS
 ]
 
-cc_binary(
-    name = "dnf5",
+# The program, as a library: the binary is linked outside this module, where the commands that are not upstream's
+# (see dnf5/main.cpp, DNF5_BUILTIN_PLUGINS) are added. It is alwayslink as nothing but main() refers to it.
+cc_library(
+    name = "dnf5_main",
     srcs = glob(["dnf5/**/*.cpp"]),
     copts = domain("dnf5"),
     cxxopts = _CXXOPTS,
     includes = ["dnf5"],
     linkopts = ["-ldl"],
     local_defines = _VERSION + ["WITH_MODULEMD"],
+    alwayslink = True,
     deps = [
         ":common_obj",
         ":headers",
