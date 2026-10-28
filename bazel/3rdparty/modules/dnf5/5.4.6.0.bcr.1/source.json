@@ -3,7 +3,7 @@
     "integrity": "sha256-JC8Od1vI4QF6W/7IQcd2vq+n6mtb0uTXvA/518V5mPM=",
     "strip_prefix": "dnf5-5.4.6.0",
     "overlay": {
-        "BUILD.bazel": "sha256-UhatKZk6WEUSIvIOVJyTfvMHenhyUGVirhl18FnpnC8=",
+        "BUILD.bazel": "sha256-Trq8cs8JtBv39SiCxvFH/QWz89d6IM/9kvLm2ZC18aU=",
         "MODULE.bazel": "sha256-2/iIQtyaS8frFsG3XboHb8w6tmGt9fOyxi/9J4gdoWY=",
         "compat/bazel_compat.h": "sha256-Bx5oJzAXrTcve/MTCJLoEQOc7att5ADlhIuw/NpCK4U=",
         "compat/darwin/sys/auxv.h": "sha256-ONOMj8IUKQILqgug+Q7HennOCPefJbOxS3UiV5kUJ4A=",
@@ -11,6 +11,9 @@
         "libdnf5/conf/config.h": "sha256-kLKyVjC95KK/KjxuNknb3M9ByQAx6pDlE+VMoTLp2To="
     },
     "patches": {
+        "dnf5__main.cpp.patch": "sha256-CAASVS9Qsekz9ckvCvwAlcijla1Xg18DnSwtUUXTetg=",
+        "libdnf5-cli__progressbar__progress_bar.cpp.patch": "sha256-2kFr77AnU6n4j9AyLtgoUVkTvfixqKCcCXVtWMo0w5o=",
+        "libdnf5-cli__session.cpp.patch": "sha256-bFw9/HGKIpMLaij2h6pfQc+m8eVf57WNgMFVMAxVX9A=",
         "libdnf5__module__nsvcap.cpp.patch": "sha256-FIRa9MHuq8XDTuB4/THDrmDJr1zDBJ4/bLrApKYBsyk=",
         "libdnf5__plugin__plugins.cpp.patch": "sha256-JwzqcUZEtECsfbcPZ4hBmRsND/6+vn0MnE/rhGXtXdM=",
         "libdnf5__plugin__utils.cpp.patch": "sha256-ZRemWr0PQG8LVeSnf/0Uor9h7c2PZNAtJd65k3Vcr/w=",

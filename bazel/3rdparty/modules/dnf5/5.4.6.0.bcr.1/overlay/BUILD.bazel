@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load(":defs.bzl", "domain", "entry_points")
 
 package(default_visibility = ["//visibility:public"])
@@ -112,4 +112,68 @@ cc_library(
 cc_library(
     name = "libdnf5",
     deps = [":libdnf5_core"] + [":libdnf5_plugin_" + p[0] for p in _LIBDNF5_PLUGINS],
+)
+
+cc_library(
+    name = "libdnf5-cli",
+    srcs = glob(["libdnf5-cli/**/*.cpp"]),
+    copts = domain("libdnf5-cli"),
+    cxxopts = _CXXOPTS,
+    includes = ["libdnf5-cli"],
+    deps = [
+        ":common_obj",
+        ":headers",
+        ":libdnf5",
+        "@fmt",
+        "@json-c",
+        "@smartcols",
+    ],
+)
+
+# name, directory, gettext domain, extra defines, extra deps
+_CMD_PLUGINS = [
+    ("changelog", "changelog", "dnf5-plugin-changelog", [], []),
+    # dnf5 itself has a RepoCommand class too; keep the symbols apart.
+    ("config_manager", "config-manager", "dnf5-plugin-config-manager", ["RepoCommand=ConfigManagerRepoCommand"], ["@zlib"]),
+    ("copr", "copr", "dnf5-plugin-copr", [], ["@json-c"]),
+    ("repoclosure", "repoclosure", "dnf5-plugin-repoclosure", [], []),
+    ("repomanage", "repomanage", "dnf5-plugin-repomanage", [], []),
+    ("reposync", "reposync", "dnf5-plugin-reposync", [], []),
+]
+
+[
+    cc_library(
+        name = name + "_cmd_plugin",
+        srcs = glob(["dnf5-plugins/%s_plugin/**/*.cpp" % dir]),
+        copts = domain(gettext) + ["-D" + d for d in defines] + entry_points("dnf5_plugin", name),
+        cxxopts = _CXXOPTS,
+        local_defines = ["WITH_MODULEMD"],
+        deps = [
+            ":common_obj",
+            ":headers",
+            ":libdnf5",
+            ":libdnf5-cli",
+            "@fmt",
+        ] + deps,
+    )
+    for (name, dir, gettext, defines, deps) in _CMD_PLUGINS
+]
+
+cc_binary(
+    name = "dnf5",
+    srcs = glob(["dnf5/**/*.cpp"]),
+    copts = domain("dnf5"),
+    cxxopts = _CXXOPTS,
+    includes = ["dnf5"],
+    linkopts = ["-ldl"],
+    local_defines = _VERSION + ["WITH_MODULEMD"],
+    deps = [
+        ":common_obj",
+        ":headers",
+        ":libdnf5",
+        ":libdnf5-cli",
+        "@fmt",
+        "@rpm",
+        "@rpm//:rpmio",
+    ] + [":%s_cmd_plugin" % p[0] for p in _CMD_PLUGINS],
 )
