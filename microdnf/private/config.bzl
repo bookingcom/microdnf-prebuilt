@@ -50,32 +50,45 @@ def _repo_dir(repo_files):
             return f.path.split("/repodata")[0]
     return repo_files[0].dirname if repo_files else ""
 
-def _dnf_config_impl(ctx):
+def render_dnf_config(
+        ctx,
+        prefix,
+        repo_configs,
+        repo_files,
+        arch,
+        releasever,
+        forcearch = "",
+        nobest = False,
+        install_weak_deps = True,
+        excludepkgs = [],
+        module_platform_id = "",
+        module_enable = []):
+    """Renders dnf.conf, the repos.d files and preamble.args under <prefix>/, and returns a DnfConfigInfo."""
     main = {
-        "best": "False" if ctx.attr.nobest else "True",
-        "install_weak_deps": "True" if ctx.attr.install_weak_deps else "False",
+        "best": "False" if nobest else "True",
+        "install_weak_deps": "True" if install_weak_deps else "False",
         "plugins": "False",
         # An empty value resets the list, whose default holds a glob of /etc/dnf/protected.d/*.conf.
         "protected_packages": "",
         # The default appends the host's /etc/os-release name and arch.
         "user_agent": "libdnf",
     }
-    if ctx.attr.excludepkgs:
-        main["excludepkgs"] = ",".join(ctx.attr.excludepkgs)
-    if ctx.attr.module_platform_id:
-        main["module_platform_id"] = ctx.attr.module_platform_id
+    if excludepkgs:
+        main["excludepkgs"] = ",".join(excludepkgs)
+    if module_platform_id:
+        main["module_platform_id"] = module_platform_id
 
-    conf = ctx.actions.declare_file(ctx.label.name + "/dnf.conf")
+    conf = ctx.actions.declare_file(prefix + "/dnf.conf")
     ctx.actions.write(conf, "[main]\n" + "".join(["%s=%s\n" % (k, main[k]) for k in sorted(main)]))
 
     repos = []
     seen = {}
-    for template in ctx.files.repo_configs:
+    for template in repo_configs:
         stem = template.basename.rsplit(".", 1)[0]
         if stem in seen:
             fail("repo_configs: two files named %s.*" % stem)
         seen[stem] = True
-        repo = ctx.actions.declare_file("%s/repos.d/%s.repo" % (ctx.label.name, stem))
+        repo = ctx.actions.declare_file("%s/repos.d/%s.repo" % (prefix, stem))
         ctx.actions.expand_template(
             template = template,
             output = repo,
@@ -83,35 +96,50 @@ def _dnf_config_impl(ctx):
         )
         repos.append(repo)
 
-    forcearch = ctx.attr.forcearch
     if not forcearch:
-        forcearch = ([a for a in ctx.attr.arch if a != "noarch"] or [""])[0]
-    preamble = list(DNF5_PREAMBLE) + ["--releasever=" + ctx.attr.releasever]
+        forcearch = ([a for a in arch if a != "noarch"] or [""])[0]
+    preamble = list(DNF5_PREAMBLE) + ["--releasever=" + releasever]
     if forcearch:
         preamble.append("--forcearch=" + forcearch)
 
-    args_file = ctx.actions.declare_file(ctx.label.name + "/preamble.args")
+    args_file = ctx.actions.declare_file(prefix + "/preamble.args")
     ctx.actions.write(args_file, "".join([a + "\n" for a in preamble]))
 
-    repo_files = ctx.files.repo_files
     data = [conf, args_file] + repos + repo_files
+    return DnfConfigInfo(
+        arch = arch,
+        args_file = args_file,
+        conf = conf,
+        files = depset(data),
+        forcearch = forcearch,
+        module_enable = module_enable,
+        preamble = preamble,
+        releasever = releasever,
+        repo_dir = _repo_dir(repo_files),
+        repos = repos,
+    )
+
+def _dnf_config_impl(ctx):
+    info = render_dnf_config(
+        ctx,
+        ctx.label.name,
+        ctx.files.repo_configs,
+        ctx.files.repo_files,
+        ctx.attr.arch,
+        ctx.attr.releasever,
+        forcearch = ctx.attr.forcearch,
+        nobest = ctx.attr.nobest,
+        install_weak_deps = ctx.attr.install_weak_deps,
+        excludepkgs = ctx.attr.excludepkgs,
+        module_platform_id = ctx.attr.module_platform_id,
+        module_enable = ctx.attr.module_enable,
+    )
     return [
         DefaultInfo(
-            files = depset([conf]),
-            runfiles = ctx.runfiles(files = data),
+            files = depset([info.conf]),
+            runfiles = ctx.runfiles(transitive_files = info.files),
         ),
-        DnfConfigInfo(
-            arch = ctx.attr.arch,
-            args_file = args_file,
-            conf = conf,
-            files = depset(data),
-            forcearch = forcearch,
-            module_enable = ctx.attr.module_enable,
-            preamble = preamble,
-            releasever = ctx.attr.releasever,
-            repo_dir = _repo_dir(repo_files),
-            repos = repos,
-        ),
+        info,
     ]
 
 dnf_config = rule(

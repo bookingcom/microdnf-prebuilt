@@ -3,7 +3,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//dnf:__pkg__"])
 
-# The lock command of dnf5, in our code rather than a patch to upstream's. It is linked into //dnf:dnf5 like the
+# The lock command of dnf5, in our code rather than a patch to upstream's. It is linked into //dnf:dnf5_binary like the
 # upstream command plugins are, which is why its extern "C" entry points are renamed (see entry_points).
 cc_library(
     name = "lock_plugin",

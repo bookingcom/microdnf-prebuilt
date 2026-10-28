@@ -1,5 +1,6 @@
 """Implementation of rpm_lock rule."""
 
+load("//microdnf/private:config.bzl", "render_dnf_config")
 load("//microdnf/private:providers.bzl", "RpmLockFileInfo")
 
 def _solver_args(ctx):
@@ -18,6 +19,109 @@ def _solver_args(ctx):
     if not ctx.attr.install_weak_deps:
         args.append("--setopt=install_weak_deps=False")
     return args
+
+def _dnf5_script(dnf5, info, repo_rel_dir, path_of):
+    """Script that runs `dnf5 lock "$@"` under the dnf_config preamble, with its path tokens expanded.
+
+    path_of maps a File to the path the script sees it at (path in an action, short_path under bazel run).
+    """
+    return """#!/usr/bin/env bash
+set -euo pipefail
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+mkdir -p "${TMP_DIR}/root"
+
+PREAMBLE=()
+while IFS= read -r line; do
+  line="${line//@CONFDIR@/${PWD}/%s}"
+  line="${line//@REPODIR@/${PWD}/%s}"
+  line="${line//@TMP@/${TMP_DIR}}"
+  PREAMBLE+=("${line}")
+done < "%s"
+
+"%s" "${PREAMBLE[@]}" lock "$@"
+""" % (path_of(info.conf).rsplit("/", 1)[0], repo_rel_dir, path_of(info.args_file), path_of(dnf5))
+
+def _dnf5_lock_args(ctx, lock_files):
+    """Arguments of `dnf5 lock` but the output; the solver settings are in the dnf_config files."""
+    args = ["--archlist=" + ",".join(ctx.attr.arch)]
+    args += ["--prune=" + pkg for pkg in ctx.attr.exclude]
+    args += ["--module-enable=" + spec for spec in ctx.attr.module_enable]
+    args += ["--lockfile=" + lf for lf in lock_files]
+    return args + ctx.attr.packages
+
+def _dnf5_lock(ctx, out, repo_rel_dir):
+    """The dnf5 backend of rpm_lock: the same lockfile, solved by `dnf5 lock` instead of dnf_lock."""
+    dnf5 = ctx.executable.dnf5_tool
+    if not dnf5:
+        fail("rpm_lock %s: backend = \"dnf5\" needs dnf5_tool" % ctx.label)
+    info = render_dnf_config(
+        ctx,
+        ctx.label.name + "_dnf5",
+        [ctx.file.repo_config],
+        ctx.files.repo_files,
+        ctx.attr.arch,
+        ctx.attr.releasever,
+        forcearch = ctx.attr.forcearch,
+        nobest = ctx.attr.nobest,
+        install_weak_deps = ctx.attr.install_weak_deps,
+        excludepkgs = ctx.attr.excludepkgs,
+        module_platform_id = ctx.attr.module_platform_id,
+        module_enable = ctx.attr.module_enable,
+    )
+
+    build_script = ctx.actions.declare_file(ctx.label.name + "_build.sh")
+    ctx.actions.write(build_script, _dnf5_script(dnf5, info, repo_rel_dir, lambda f: f.path), is_executable = True)
+    args = ctx.actions.args()
+    args.add("--output=" + out.path)
+    args.add_all(_dnf5_lock_args(ctx, [lf.path for lf in ctx.files.lock_files]))
+    ctx.actions.run(
+        mnemonic = "RpmLock",
+        progress_message = "Generating RPM lockfile %s with dnf5" % out.short_path,
+        executable = build_script,
+        arguments = [args],
+        inputs = depset(ctx.files.lock_files, transitive = [info.files]),
+        tools = [dnf5],
+        outputs = [out],
+    )
+
+    # 'bazel run' writes the lockfile into the source tree.
+    out_dest = ctx.attr.out.name if ctx.attr.out else ctx.label.name + ".lock.json"
+    runner_script = ctx.actions.declare_file(ctx.label.name + "_run.sh")
+    solve = ctx.actions.declare_file(ctx.label.name + "_solve.sh")
+    ctx.actions.write(solve, _dnf5_script(dnf5, info, repo_rel_dir, lambda f: f.short_path), is_executable = True)
+    ctx.actions.write(runner_script, """#!/usr/bin/env bash
+set -euo pipefail
+
+DEST="${BUILD_WORKSPACE_DIRECTORY}/%s/%s"
+TMP_OUT="$(mktemp)"
+trap 'rm -f "${TMP_OUT}"' EXIT
+
+"%s" --output="${TMP_OUT}" %s
+
+mkdir -p "$(dirname "${DEST}")"
+cp -f "${TMP_OUT}" "${DEST}"
+echo "Lockfile updated at: ${DEST}"
+""" % (
+        ctx.label.package,
+        out_dest,
+        solve.short_path,
+        " ".join(["'%s'" % a for a in _dnf5_lock_args(ctx, [lf.short_path for lf in ctx.files.lock_files])]),
+    ), is_executable = True)
+
+    return [
+        DefaultInfo(
+            files = depset([out]),
+            executable = runner_script,
+            runfiles = ctx.runfiles(files = [solve, dnf5] + ctx.files.lock_files, transitive_files = info.files),
+        ),
+        RpmLockFileInfo(
+            lock_file = out,
+            arch = ",".join(ctx.attr.arch),
+            packages = ctx.attr.packages,
+        ),
+    ]
 
 def _rpm_lock_impl(ctx):
     out = ctx.outputs.out
@@ -40,6 +144,9 @@ def _rpm_lock_impl(ctx):
             break
     if not repo_rel_dir and repo_files:
         repo_rel_dir = repo_files[0].dirname
+
+    if ctx.attr.backend == "dnf5":
+        return _dnf5_lock(ctx, out, repo_rel_dir)
 
     # Script for hermetic bazel build
     build_content = """#!/usr/bin/env bash
@@ -190,6 +297,16 @@ rpm_lock = rule(
             mandatory = True,
             allow_empty = False,
             doc = "Mandatory target CPU architecture list (e.g. ['x86_64', 'noarch']).",
+        ),
+        "backend": attr.string(
+            default = "libdnf",
+            values = ["libdnf", "dnf5"],
+            doc = "Solver behind the lockfile: dnf_lock (libdnf) or `dnf5 lock` (needs dnf5_tool). The lockfiles are the same.",
+        ),
+        "dnf5_tool": attr.label(
+            executable = True,
+            cfg = "exec",
+            doc = "dnf5 executable (with the lock command) for backend = \"dnf5\".",
         ),
         "exclude": attr.string_list(
             default = [],

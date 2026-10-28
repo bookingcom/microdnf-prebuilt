@@ -64,7 +64,7 @@ alias(
 
 alias(
     name = "dnf5",
-    actual = "//dnf:dnf5",
+    actual = "//:dnf5",
     visibility = ["//visibility:public"],
 )
 
