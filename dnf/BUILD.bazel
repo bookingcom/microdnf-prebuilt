@@ -207,6 +207,7 @@ cc_binary(
         "lock.c",
         "lock.h",
         "lock-main.c",
+        "solve-arch.h",
     ],
     copts = COMMON_COPTS,
     defines = [
@@ -253,6 +254,7 @@ cc_binary(
         "mark.c",
         "mark.h",
         "mark-main.c",
+        "solve-arch.h",
     ],
     copts = COMMON_COPTS,
     defines = [
