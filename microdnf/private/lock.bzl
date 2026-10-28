@@ -1,6 +1,6 @@
 """Implementation of rpm_lock rule."""
 
-load("//microdnf/private:config.bzl", "render_dnf_config")
+load("//microdnf/private:config.bzl", "dnf5_script", "render_dnf_config")
 load("//microdnf/private:providers.bzl", "RpmLockFileInfo")
 
 def _solver_args(ctx):
@@ -19,29 +19,6 @@ def _solver_args(ctx):
     if not ctx.attr.install_weak_deps:
         args.append("--setopt=install_weak_deps=False")
     return args
-
-def _dnf5_script(dnf5, info, repo_rel_dir, path_of):
-    """Script that runs `dnf5 lock "$@"` under the dnf_config preamble, with its path tokens expanded.
-
-    path_of maps a File to the path the script sees it at (path in an action, short_path under bazel run).
-    """
-    return """#!/usr/bin/env bash
-set -euo pipefail
-
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "${TMP_DIR}"' EXIT
-mkdir -p "${TMP_DIR}/root"
-
-PREAMBLE=()
-while IFS= read -r line; do
-  line="${line//@CONFDIR@/${PWD}/%s}"
-  line="${line//@REPODIR@/${PWD}/%s}"
-  line="${line//@TMP@/${TMP_DIR}}"
-  PREAMBLE+=("${line}")
-done < "%s"
-
-"%s" "${PREAMBLE[@]}" lock "$@"
-""" % (path_of(info.conf).rsplit("/", 1)[0], repo_rel_dir, path_of(info.args_file), path_of(dnf5))
 
 def _dnf5_lock_args(ctx, lock_files):
     """Arguments of `dnf5 lock` but the output; the solver settings are in the dnf_config files."""
@@ -72,7 +49,7 @@ def _dnf5_lock(ctx, out, repo_rel_dir):
     )
 
     build_script = ctx.actions.declare_file(ctx.label.name + "_build.sh")
-    ctx.actions.write(build_script, _dnf5_script(dnf5, info, repo_rel_dir, lambda f: f.path), is_executable = True)
+    ctx.actions.write(build_script, dnf5_script(dnf5, info, repo_rel_dir, "lock", lambda f: f.path), is_executable = True)
     args = ctx.actions.args()
     args.add("--output=" + out.path)
     args.add_all(_dnf5_lock_args(ctx, [lf.path for lf in ctx.files.lock_files]))
@@ -90,7 +67,7 @@ def _dnf5_lock(ctx, out, repo_rel_dir):
     out_dest = ctx.attr.out.name if ctx.attr.out else ctx.label.name + ".lock.json"
     runner_script = ctx.actions.declare_file(ctx.label.name + "_run.sh")
     solve = ctx.actions.declare_file(ctx.label.name + "_solve.sh")
-    ctx.actions.write(solve, _dnf5_script(dnf5, info, repo_rel_dir, lambda f: f.short_path), is_executable = True)
+    ctx.actions.write(solve, dnf5_script(dnf5, info, repo_rel_dir, "lock", lambda f: f.short_path), is_executable = True)
     ctx.actions.write(runner_script, """#!/usr/bin/env bash
 set -euo pipefail
 

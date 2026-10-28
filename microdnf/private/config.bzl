@@ -119,6 +119,29 @@ def render_dnf_config(
         repos = repos,
     )
 
+def dnf5_script(dnf5, info, repo_rel_dir, command, path_of):
+    """Script that runs `dnf5 <command> "$@"` under the dnf_config preamble, with its path tokens expanded.
+
+    path_of maps a File to the path the script sees it at (path in an action, short_path under bazel run).
+    """
+    return """#!/usr/bin/env bash
+set -euo pipefail
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+mkdir -p "${TMP_DIR}/root"
+
+PREAMBLE=()
+while IFS= read -r line; do
+  line="${line//@CONFDIR@/${PWD}/%s}"
+  line="${line//@REPODIR@/${PWD}/%s}"
+  line="${line//@TMP@/${TMP_DIR}}"
+  PREAMBLE+=("${line}")
+done < "%s"
+
+"%s" "${PREAMBLE[@]}" %s "$@"
+""" % (path_of(info.conf).rsplit("/", 1)[0], repo_rel_dir, path_of(info.args_file), path_of(dnf5), command)
+
 def _dnf_config_impl(ctx):
     info = render_dnf_config(
         ctx,

@@ -1,7 +1,45 @@
 """Public API for marking RPM packages into rpmdb."""
 
+load("//microdnf/private:config.bzl", "dnf5_script", "render_dnf_config")
+
+def _dnf5_mark(ctx, out_dir):
+    """The dnf5 backend of rpm_mark: the same rpmdb, written by `dnf5 rpmdb-mark` instead of mark."""
+    dnf5 = ctx.executable.dnf5_tool
+    if not dnf5:
+        fail("rpm_mark %s: backend = \"dnf5\" needs dnf5_tool" % ctx.label)
+    arch = ctx.attr.arch.split(",")
+    info = render_dnf_config(
+        ctx,
+        ctx.label.name + "_dnf5",
+        [ctx.file.repo_config],
+        ctx.files.repo_files,
+        arch,
+        ctx.attr.releasever,
+    )
+    script = ctx.actions.declare_file(ctx.label.name + "_mark.sh")
+    ctx.actions.write(script, dnf5_script(dnf5, info, info.repo_dir, "rpmdb-mark", lambda f: f.path), is_executable = True)
+
+    args = ctx.actions.args()
+    args.add("--rpmdb-root=" + out_dir.path)
+    args.add("--archlist=" + ",".join(arch))
+    if ctx.attr.nodeps:
+        args.add("--nodeps")
+    args.add_all(ctx.attr.packages)
+    ctx.actions.run(
+        inputs = info.files,
+        outputs = [out_dir],
+        executable = script,
+        arguments = [args],
+        tools = [dnf5],
+        mnemonic = "RpmMark",
+        progress_message = "Marking RPM packages into rpmdb %{output} with dnf5",
+    )
+    return [DefaultInfo(files = depset([out_dir]))]
+
 def _rpm_mark_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name)
+    if ctx.attr.backend == "dnf5":
+        return _dnf5_mark(ctx, out_dir)
     build_script = ctx.actions.declare_file(ctx.label.name + "_mark.sh")
 
     repo_conf = ctx.file.repo_config
@@ -76,6 +114,16 @@ mkdir -p "%s"
 rpm_mark = rule(
     implementation = _rpm_mark_impl,
     attrs = {
+        "backend": attr.string(
+            default = "libdnf",
+            values = ["libdnf", "dnf5"],
+            doc = "Tool behind the rpmdb: mark (libdnf) or `dnf5 rpmdb-mark` (needs dnf5_tool). The rpmdbs hold the same packages.",
+        ),
+        "dnf5_tool": attr.label(
+            executable = True,
+            cfg = "exec",
+            doc = "dnf5 executable (with the rpmdb-mark command) for backend = \"dnf5\".",
+        ),
         "packages": attr.string_list(
             mandatory = True,
             doc = "List of package specifications with optional versions (e.g. ['curl', 'libcurl=7.76.1']).",
