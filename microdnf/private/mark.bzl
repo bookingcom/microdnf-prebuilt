@@ -3,10 +3,8 @@
 load("//microdnf/private:config.bzl", "dnf5_script", "render_dnf_config")
 
 def _dnf5_mark(ctx, out_dir):
-    """The dnf5 backend of rpm_mark: the same rpmdb, written by `dnf5 rpmdb-mark` instead of mark."""
+    """Writes the rpmdb with `dnf5 rpmdb-mark` under a hermetic dnf_config."""
     dnf5 = ctx.executable.dnf5_tool
-    if not dnf5:
-        fail("rpm_mark %s: backend = \"dnf5\" needs dnf5_tool" % ctx.label)
     arch = ctx.attr.arch.split(",")
     info = render_dnf_config(
         ctx,
@@ -32,99 +30,22 @@ def _dnf5_mark(ctx, out_dir):
         arguments = [args],
         tools = [dnf5],
         mnemonic = "RpmMark",
-        progress_message = "Marking RPM packages into rpmdb %{output} with dnf5",
+        progress_message = "Marking RPM packages into rpmdb %{output}",
     )
     return [DefaultInfo(files = depset([out_dir]))]
 
 def _rpm_mark_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name)
-    if ctx.attr.backend == "dnf5":
-        return _dnf5_mark(ctx, out_dir)
-    build_script = ctx.actions.declare_file(ctx.label.name + "_mark.sh")
-
-    repo_conf = ctx.file.repo_config
-    mark_tool = ctx.executable.mark_tool
-    repo_files = ctx.files.repo_files
-
-    # Determine relative repo directory by finding the parent of repodata
-    repo_rel_dir = ""
-    for f in repo_files:
-        if "/repodata/" in f.path or f.path.endswith("/repodata"):
-            parts = f.path.split("/repodata")
-            repo_rel_dir = parts[0]
-            break
-    if not repo_rel_dir and repo_files:
-        repo_rel_dir = repo_files[0].dirname
-
-    build_content = """#!/usr/bin/env bash
-set -euo pipefail
-
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "${TMP_DIR}"' EXIT
-
-REPOS_DIR="${TMP_DIR}/repos.d"
-mkdir -p "${REPOS_DIR}"
-
-if grep -q '@REPO_DIR@' "%s"; then
-  sed "s|@REPO_DIR@|${PWD}/%s|g" "%s" > "${REPOS_DIR}/repo.repo"
-else
-  cp "%s" "${REPOS_DIR}/repo.repo"
-fi
-
-CACHE_DIR="${TMP_DIR}/cache"
-mkdir -p "${CACHE_DIR}"
-
-mkdir -p "%s"
-
-"%s" \\
-  --reposdir="${REPOS_DIR}" \\
-  --setopt=cachedir="${CACHE_DIR}" \\
-  --installroot="%s" \\
-  --releasever="%s" \\
-  --archlist="%s" \\
-  "$@"
-""" % (repo_conf.path, repo_rel_dir, repo_conf.path, repo_conf.path, out_dir.path, mark_tool.path, out_dir.path, ctx.attr.releasever, ctx.attr.arch)
-
-    ctx.actions.write(
-        output = build_script,
-        content = build_content,
-        is_executable = True,
-    )
-
-    args = ctx.actions.args()
-    if ctx.attr.nodeps:
-        args.add("--nodeps")
-    for pkg in ctx.attr.packages:
-        args.add(pkg)
-
-    ctx.actions.run(
-        inputs = [repo_conf] + repo_files,
-        outputs = [out_dir],
-        executable = build_script,
-        arguments = [args],
-        tools = [mark_tool],
-        mnemonic = "RpmMark",
-        progress_message = "Marking RPM packages into rpmdb %{output}",
-    )
-
-    return [
-        DefaultInfo(files = depset([out_dir])),
-    ]
+    return _dnf5_mark(ctx, out_dir)
 
 rpm_mark = rule(
     implementation = _rpm_mark_impl,
     attrs = {
-        "backend": attr.string(
-            default = "dnf5",
-            values = ["libdnf", "dnf5"],
-            doc = "Tool behind the rpmdb: `dnf5 rpmdb-mark` (dnf5_tool, the default) or mark (libdnf, mark_tool; " +
-                  "deprecated, kept for one release). The rpmdbs hold the same packages.",
-        ),
         "dnf5_tool": attr.label(
             default = Label("//microdnf:dnf5"),
             executable = True,
             cfg = "exec",
-            doc = "dnf5 executable (with the rpmdb-mark command) for backend = \"dnf5\".",
+            doc = "dnf5 executable with the rpmdb-mark command.",
         ),
         "packages": attr.string_list(
             mandatory = True,
@@ -150,12 +71,6 @@ rpm_mark = rule(
         "nodeps": attr.bool(
             default = False,
             doc = "Whether to disable dependency resolution.",
-        ),
-        "mark_tool": attr.label(
-            default = Label("//:mark"),
-            executable = True,
-            cfg = "exec",
-            doc = "mark executable for backend = \"libdnf\".",
         ),
     },
 )
