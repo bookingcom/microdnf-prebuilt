@@ -646,7 +646,6 @@ rpm_extract(
 rpm_mark(
     name = "ol9_marked_rpmdb",
     arch = "x86_64",
-    backend = "libdnf",
     packages = [
         "curl=7.76.1-40.el9_8.8",
     ],
@@ -655,44 +654,12 @@ rpm_mark(
     repo_files = ["//e2e/testdata:ol9_repo_files"],
 )
 
+# rpm_mark and the standalone `dnf5 rpmdb-mark`: the rpmdb holds exactly curl and libcurl.
 sh_test(
     name = "oracle_linux_curl_mark_test",
     srcs = ["test_ol9_curl_mark.sh"],
     args = [
         "$(location :extracted_ol9_curl/usr/bin/curl)",
-        "$(location :ol9_marked_rpmdb)",
-        "$(location //:mark)",
-        "$(location //e2e/testdata:ol9_repo/ol9.repo)",
-        "e2e/testdata/ol9_repo",
-    ],
-    data = [
-        ":extracted_ol9_curl",
-        ":extracted_ol9_curl/usr/bin/curl",
-        ":ol9_marked_rpmdb",
-        "//:mark",
-        "//e2e/testdata:ol9_repo/ol9.repo",
-        "//e2e/testdata:ol9_repo_files",
-    ] + _SANITIZER_DATA,
-)
-
-# The same with the defaults of rpm_mark (dnf5 and `dnf5 rpmdb-mark`), whose rpmdb must hold the libdnf one's packages.
-rpm_mark(
-    name = "ol9_marked_rpmdb_dnf5",
-    arch = "x86_64",
-    packages = [
-        "curl=7.76.1-40.el9_8.8",
-    ],
-    releasever = "9",
-    repo_config = "//e2e/testdata:ol9_repo/ol9.repo",
-    repo_files = ["//e2e/testdata:ol9_repo_files"],
-)
-
-sh_test(
-    name = "oracle_linux_curl_mark_dnf5_test",
-    srcs = ["test_ol9_curl_mark_dnf5.sh"],
-    args = [
-        "$(location :extracted_ol9_curl/usr/bin/curl)",
-        "$(location :ol9_marked_rpmdb_dnf5)",
         "$(location :ol9_marked_rpmdb)",
         "$(location //:dnf5)",
         "$(rootpath :ol9_dnf_config)",
@@ -704,7 +671,6 @@ sh_test(
         ":extracted_ol9_curl/usr/bin/curl",
         ":ol9_dnf_config",
         ":ol9_marked_rpmdb",
-        ":ol9_marked_rpmdb_dnf5",
         "//:dnf5",
         "//e2e/testdata:ol9_repo_files",
     ] + _SANITIZER_DATA,
