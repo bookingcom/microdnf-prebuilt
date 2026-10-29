@@ -1,0 +1,11 @@
+--- a/libdnf5/utils/fs/utils.hpp
++++ b/libdnf5/utils/fs/utils.hpp
+@@ -20,7 +20,7 @@
+ #ifndef LIBDNF5_UTILS_FS_UTILS_PRIVATE_HPP
+ #define LIBDNF5_UTILS_FS_UTILS_PRIVATE_HPP
+ 
+-#include "libdnf5/utils/fs/utils.hpp"
++#include <libdnf5/utils/fs/utils.hpp>
+ 
+ 
+ namespace libdnf5::utils::fs {

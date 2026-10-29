@@ -29,13 +29,16 @@ mkdir -p release_assets
 
 BASE_URL="https://github.com/${GITHUB_REPOSITORY:-bookingcom/microdnf-prebuilt}/releases/download/${TAG}"
 
-# 1. Collect all 16 prebuilt binaries and compute integrity hashes
+# 1. Collect all 20 prebuilt binaries and compute integrity hashes
 declare -A INTEGRITIES
+# The file in the output directory of //dnf:<tool>_<platform>. platform_transition_binary keeps the name of the binary
+# it wraps, which is the tool's unless listed here.
+declare -A SRC_NAMES=([dnf5]=dnf5)
 
-for target in dnf_lock microdnf rpm2archive rpm2files; do
+for target in dnf5 dnf_lock microdnf rpm2archive rpm2files; do
   for platform in linux_amd64 linux_arm64 osx_amd64 osx_arm64; do
     bin_name="${target}_${platform}"
-    src_file="bazel-bin/dnf/${bin_name}/${target}"
+    src_file="bazel-bin/dnf/${bin_name}/${SRC_NAMES[${target}]:-${target}}"
     dest_file="release_assets/${bin_name}"
 
     if [ ! -f "${src_file}" ]; then
@@ -98,6 +101,11 @@ bazel_dep(name = "platforms", version = "1.1.0")
 microdnf_prebuilt = use_extension("//microdnf:extensions.bzl", "microdnf_prebuilt_extension")
 use_repo(
     microdnf_prebuilt,
+    "dnf5",
+    "dnf5_linux_amd64",
+    "dnf5_linux_arm64",
+    "dnf5_osx_amd64",
+    "dnf5_osx_arm64",
     "dnf_lock",
     "dnf_lock_linux_amd64",
     "dnf_lock_linux_arm64",
@@ -138,12 +146,12 @@ cp microdnf/BUILD.bazel "${PKG_DIR}/microdnf/BUILD.bazel"
 cp microdnf/private/*.bzl "${PKG_DIR}/microdnf/private/"
 cp microdnf/private/BUILD.bazel "${PKG_DIR}/microdnf/private/BUILD.bazel"
 
-# In packaged microdnf/BUILD.bazel, bind rpm2files alias to prebuilt binary select
+# In packaged microdnf/BUILD.bazel, bind rpm2files and dnf5 aliases to prebuilt binary select
 python3 -c '
 path = "'"${PKG_DIR}"'/microdnf/BUILD.bazel"
 with open(path, "r") as f:
     content = f.read()
-for tool, source in (("rpm2files", "//rpm2files:rpm2files"),):
+for tool, source in (("rpm2files", "//rpm2files:rpm2files"), ("dnf5", "//dnf:dnf5")):
     target = """alias(
     name = "%s",
     actual = "%s",
@@ -195,10 +203,10 @@ bazel_dep(name = "microdnf_prebuilt", version = "${RELEASE_VERSION}")
 
 ### Prebuilt Binaries & Integrities
 Prebuilt standalone executables and toolchains are available for:
-- \`linux_amd64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`)
-- \`linux_arm64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`)
-- \`osx_amd64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`)
-- \`osx_arm64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`)
+- \`linux_amd64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`, \`dnf5\`)
+- \`linux_arm64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`, \`dnf5\`)
+- \`osx_amd64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`, \`dnf5\`)
+- \`osx_arm64\` (\`microdnf\`, \`rpm2archive\`, \`dnf_lock\`, \`rpm2files\`, \`dnf5\`)
 EOF
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then

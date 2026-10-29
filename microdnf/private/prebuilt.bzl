@@ -7,13 +7,13 @@ def _microdnf_tools_repo_impl(repo_ctx):
 
     build_content = """package(default_visibility = ["//visibility:public"])
 
-exports_files(["lock", "rpm2archive", "microdnf", "dnf_lock", "rpm2files"])
+exports_files(["lock", "rpm2archive", "microdnf", "dnf_lock", "rpm2files", "dnf5"])
 """
     repo_ctx.file("BUILD.bazel", build_content)
 
 microdnf_tools_repo = repository_rule(
     implementation = _microdnf_tools_repo_impl,
-    doc = "Extracts prebuilt microdnf tools archive (lock, rpm2archive, microdnf, dnf_lock) for downstream workspaces.",
+    doc = "Extracts prebuilt microdnf tools archive (lock, rpm2archive, microdnf, dnf_lock, rpm2files, dnf5) for downstream workspaces.",
     attrs = {
         "archive": attr.label(
             mandatory = True,
