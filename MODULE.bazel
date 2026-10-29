@@ -25,6 +25,22 @@ go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps", dev_dependency =
 go_deps.from_file(go_mod = "//:go.mod")
 use_repo(go_deps, "com_github_klauspost_compress")
 
+# gazelle -> rules_apple -> rules_swift registers @build_bazel_rules_swift_local_config//:all, so
+# toolchain resolution fetches it, and on a host with swiftc (GitHub ubuntu runners) its
+# autoconfiguration compiles a Swift probe for 25-80 s. Nothing here is Swift: stand in an empty repo.
+bazel_dep(name = "rules_swift", version = "3.1.2", dev_dependency = True)
+
+empty_repository = use_repo_rule("//bazel:empty_repository.bzl", "empty_repository")
+
+empty_repository(
+    name = "no_swift_toolchains",
+    dev_dependency = True,
+)
+
+swift_deps = use_extension("@rules_swift//swift:extensions.bzl", "non_module_deps", dev_dependency = True)
+
+override_repo(swift_deps, build_bazel_rules_swift_local_config = "no_swift_toolchains")
+
 # Hermetic Python 3.14 via aspect_rules_py from BCR
 bazel_dep(name = "aspect_rules_py", version = "2.0.0-alpha.8", dev_dependency = True)
 

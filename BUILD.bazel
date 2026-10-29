@@ -42,6 +42,7 @@ TARGETS = [
     alias(
         name = "{}_{}".format(target, platform),
         actual = "//dnf:{}_{}".format(target, platform),
+        tags = ["manual"],
     )
     for target in TARGETS
     for platform in SUPPORTED_PLATFORMS
@@ -51,6 +52,7 @@ TARGETS = [
     alias(
         name = target + "_all",
         actual = "//dnf:" + target + "_all",
+        tags = ["manual"],
     )
     for target in TARGETS
 ]
@@ -67,6 +69,7 @@ alias(
     alias(
         name = "rpm2files_" + platform,
         actual = "//dnf:rpm2files_" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -79,6 +82,7 @@ alias(
 alias(
     name = "rpm2files_all",
     actual = "//dnf:rpm2files_all",
+    tags = ["manual"],
 )
 
 tar(
