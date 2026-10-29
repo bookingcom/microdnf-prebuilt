@@ -1,9 +1,18 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_test", "default_test_runner")
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//microdnf:defs.bzl", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
+load("//e2e:lock_golden.bzl", "lock_golden")
+load("//microdnf:defs.bzl", "dnf_config", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
 load("//microdnf/private:package.bzl", "rpm_package")
 
 package(default_visibility = ["//visibility:public"])
+
+# UBSan suppression file, present in the runfiles only under --config=asan.
+_SANITIZER_DATA = select({
+    "//sanitizers:enabled": ["//sanitizers:suppressions"],
+    "//conditions:default": [],
+})
 
 # Direct execution test for built tools
 sh_test(
@@ -12,21 +21,102 @@ sh_test(
     args = [
         "$(location //:microdnf)",
         "$(location //:rpm2archive)",
-        "$(location //:dnf_lock)",
         "$(location //:rpm2files)",
-        "$(location //:mark)",
+        "$(location //:dnf5)",
     ],
     data = [
-        "//:dnf_lock",
-        "//:mark",
+        "//:dnf5",
         "//:microdnf",
         "//:rpm2archive",
         "//:rpm2files",
+    ] + _SANITIZER_DATA,
+)
+
+# dnf5 smoke: repo load, repoquery and a solver run against the Oracle Linux 9 test repository
+sh_test(
+    name = "dnf5_smoke_test",
+    srcs = ["test_dnf5.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "e2e/testdata/ol9_repo",
+        "e2e/testdata/repo/tour-4-6.noarch.rpm",
+    ],
+    data = [
+        "//:dnf5",
+        "//e2e/testdata:ol9_repo_files",
+        "//e2e/testdata:test_repo_files",
+    ] + _SANITIZER_DATA,
+)
+
+# Module spec parsing of the dnf5 build: its NSVCAP regexes were patched from POSIX extended (aborts on libc++) to ECMAScript.
+cc_test(
+    name = "nsvcap_test",
+    srcs = ["nsvcap_test.cc"],
+    copts = ["-std=c++20"],
+    deps = [
+        "@dnf5_src//:libdnf5_core",
+        "@googletest//:gtest_main",
     ],
 )
 
+# dnf_config renders dnf.conf and the .repo file; the preamble makes dnf5 read only those.
+dnf_config(
+    name = "ol9_dnf_config",
+    excludepkgs = ["mystery-devel"],
+    install_weak_deps = False,
+    module_platform_id = "platform:el9",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:ol9_repo/ol9.repo"],
+    repo_files = ["//e2e/testdata:ol9_repo_files"],
+)
+
+filegroup(
+    name = "dnf5_test_lib",
+    srcs = ["dnf5_lib.sh"],
+)
+
+sh_test(
+    name = "dnf5_config_smoke_test",
+    srcs = ["test_dnf5_config.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
+        "e2e/testdata/ol9_repo",
+    ],
+    data = [
+        ":dnf5_test_lib",
+        ":ol9_dnf_config",
+        "//:dnf5",
+    ] + _SANITIZER_DATA,
+)
+
+# dnf5's effective configuration under the preamble holds no host path and equals the golden file.
+# To update it, copy dnf5_config_golden.txt from the test's undeclared outputs (bazel-testlogs/.../test.outputs).
+sh_test(
+    name = "dnf5_config_golden_test",
+    srcs = ["test_dnf5_config_golden.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
+        "e2e/testdata/ol9_repo",
+        "$(rootpath dnf5_config_golden.txt)",
+    ],
+    data = [
+        "dnf5_config_golden.txt",
+        ":dnf5_test_lib",
+        ":ol9_dnf_config",
+        "//:dnf5",
+    ] + _SANITIZER_DATA,
+)
+
+# Replaces the sandbox paths of a lockfile (see lock_golden.bzl and normalize_lock.sh).
+sh_binary(
+    name = "normalize_lock",
+    srcs = ["normalize_lock.sh"],
+)
+
 # Step 2 test: Lockfile generation with RPM exclusion
-rpm_lock(
+lock_golden(
     name = "test_generated_lock",
     arch = [
         "x86_64",
@@ -52,7 +142,7 @@ sh_test(
 )
 
 # Incremental lockfile tests
-rpm_lock(
+lock_golden(
     name = "layer2_already_installed_lock",
     arch = [
         "x86_64",
@@ -66,7 +156,7 @@ rpm_lock(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-rpm_lock(
+lock_golden(
     name = "layer2_incremental_lock",
     arch = [
         "x86_64",
@@ -80,7 +170,7 @@ rpm_lock(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-rpm_lock(
+lock_golden(
     name = "layer2_both_lock",
     arch = [
         "x86_64",
@@ -97,7 +187,7 @@ rpm_lock(
     repo_files = ["//e2e/testdata:test_repo_files"],
 )
 
-rpm_lock(
+lock_golden(
     name = "changed_integrity_lock",
     arch = [
         "x86_64",
@@ -125,6 +215,124 @@ sh_test(
         ":layer2_already_installed.lock.json",
         ":layer2_both.lock.json",
         ":layer2_incremental.lock.json",
+    ],
+)
+
+dnf_config(
+    name = "features_dnf_config",
+    module_platform_id = "platform:el9",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:features.repo"],
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+# `dnf5 lock` options: excludepkgs, module enable, best/nobest, forcearch, duplicate repos, weak deps.
+sh_test(
+    name = "lock_features_test",
+    srcs = ["test_lock_features.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(location //e2e/testdata:features-repo/repodata/repomd.xml)",
+        "$(rootpath :features_dnf_config)",
+    ],
+    data = [
+        ":dnf5_test_lib",
+        ":features_dnf_config",
+        "//:dnf5",
+        "//e2e/testdata:features-repo/repodata/repomd.xml",
+        "//e2e/testdata:features_repo_files",
+    ] + _SANITIZER_DATA,
+    shard_count = 6,
+)
+
+# The same options through the rpm_lock attributes (golden lockfiles in //e2e/testdata)
+lock_golden(
+    name = "attrs_excludepkgs_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    excludepkgs = ["ca-certificates-2026.2.92_v9.0.319-*"],
+    packages = ["certuser"],
+    out = "attrs_excludepkgs.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+lock_golden(
+    name = "attrs_nobest_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    nobest = True,
+    packages = ["bestapp"],
+    out = "attrs_nobest.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+lock_golden(
+    name = "attrs_noweak_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    install_weak_deps = False,
+    packages = ["weakapp"],
+    out = "attrs_noweak.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+lock_golden(
+    name = "attrs_module_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    module_enable = ["mysql:8.4"],
+    module_platform_id = "platform:el9",
+    packages = ["mysql"],
+    out = "attrs_module.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+lock_golden(
+    name = "attrs_forcearch_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    forcearch = "x86_64",
+    packages = ["expat"],
+    out = "attrs_forcearch.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+sh_test(
+    name = "lock_attrs_test",
+    srcs = ["test_lock_attrs.sh"],
+    args = [
+        "$(location :attrs_excludepkgs.lock.json)",
+        "$(location :attrs_nobest.lock.json)",
+        "$(location :attrs_module.lock.json)",
+        "$(location :attrs_forcearch.lock.json)",
+        "$(location :attrs_noweak.lock.json)",
+    ],
+    data = [
+        ":attrs_excludepkgs.lock.json",
+        ":attrs_forcearch.lock.json",
+        ":attrs_module.lock.json",
+        ":attrs_nobest.lock.json",
+        ":attrs_noweak.lock.json",
     ],
 )
 
@@ -302,35 +510,49 @@ test_suite(
     tests = [":downstream_e2e_tests_bazel_9_3_1"],
 )
 
+dnf_config(
+    name = "test_dnf_config",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:test.repo"],
+    repo_files = ["//e2e/testdata:test_repo_files"],
+)
+
+# `dnf5 lock` run in the target configuration, where libdnf5's assertions are compiled in.
 sh_test(
     name = "lock_direct_test",
     srcs = ["test_lock_direct.sh"],
     args = [
-        "$(rootpath //:dnf_lock)",
+        "$(rootpath //:dnf5)",
         "$(rootpath //e2e/testdata:test.repo)",
         "$(rootpath //e2e/testdata:repo/repodata/repomd.xml)",
         "$(rootpath :test_generated_lock.lock.json)",
+        "$(rootpath :test_dnf_config)",
     ],
     data = [
+        ":dnf5_test_lib",
+        ":test_dnf_config",
         ":test_generated_lock.lock.json",
-        "//:dnf_lock",
+        "//:dnf5",
         "//e2e/testdata:repo/repodata/repomd.xml",
         "//e2e/testdata:test.repo",
         "//e2e/testdata:test_repo_files",
-    ],
+    ] + _SANITIZER_DATA,
 )
 
+# `dnf5 lock --lockfile` on small metadata-only repositories.
 sh_test(
     name = "lock_layers_test",
     srcs = ["test_lock_layers.sh"],
     args = [
         "$(rootpath :test_lock_layers.py)",
-        "$(rootpath //:dnf_lock)",
+        "$(rootpath //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
     ],
     data = [
+        ":ol9_dnf_config",
         ":test_lock_layers.py",
-        "//:dnf_lock",
-    ],
+        "//:dnf5",
+    ] + _SANITIZER_DATA,
 )
 
 # Step 7 test: Oracle Linux 9 curl binary extraction and rpmdb mark
@@ -371,22 +593,24 @@ rpm_mark(
     repo_files = ["//e2e/testdata:ol9_repo_files"],
 )
 
+# rpm_mark and the standalone `dnf5 rpmdb-mark`: the rpmdb holds exactly curl and libcurl.
 sh_test(
     name = "oracle_linux_curl_mark_test",
     srcs = ["test_ol9_curl_mark.sh"],
     args = [
         "$(location :extracted_ol9_curl/usr/bin/curl)",
         "$(location :ol9_marked_rpmdb)",
-        "$(location //:mark)",
-        "$(location //e2e/testdata:ol9_repo/ol9.repo)",
+        "$(location //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
         "e2e/testdata/ol9_repo",
     ],
     data = [
+        ":dnf5_test_lib",
         ":extracted_ol9_curl",
         ":extracted_ol9_curl/usr/bin/curl",
+        ":ol9_dnf_config",
         ":ol9_marked_rpmdb",
-        "//:mark",
-        "//e2e/testdata:ol9_repo/ol9.repo",
+        "//:dnf5",
         "//e2e/testdata:ol9_repo_files",
-    ],
+    ] + _SANITIZER_DATA,
 )

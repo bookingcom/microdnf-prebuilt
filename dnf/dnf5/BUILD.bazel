@@ -1,0 +1,73 @@
+load("@dnf5_src//:defs.bzl", "domain", "entry_points")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//dnf:__pkg__"])
+
+# What our command plugins share, see command_plugin.hpp.
+cc_library(
+    name = "command_plugin",
+    hdrs = [
+        "arguments.hpp",
+        "command_plugin.hpp",
+    ],
+    deps = [
+        "@dnf5_src//:headers",
+        "@dnf5_src//:libdnf5-cli",
+    ],
+)
+
+# The lock command of dnf5, in our code rather than a patch to upstream's. It is linked into //dnf:dnf5_binary like the
+# upstream command plugins are, which is why its extern "C" entry points are renamed (see entry_points).
+cc_library(
+    name = "lock_plugin",
+    srcs = [
+        "lock.cpp",
+        "lock_layers.cpp",
+        "lock_layers.hpp",
+        "lock.hpp",
+        "lock_cmd_plugin.cpp",
+    ],
+    copts = domain("dnf5-plugin-lock") + entry_points("dnf5_plugin", "lock"),
+    cxxopts = [
+        "-std=gnu++20",
+        # As for the dnf5 sources: stands in for patches to upstream headers that assume glibc and libstdc++.
+        "-include",
+        "bazel_compat.h",
+    ],
+    alwayslink = True,
+    deps = [
+        ":command_plugin",
+        "@dnf5_src//:common_obj",
+        "@dnf5_src//:headers",
+        "@dnf5_src//:libdnf5",
+        "@dnf5_src//:libdnf5-cli",
+        "@glib//:glib",
+        "@json-c//:json-c",
+    ],
+)
+
+# The rpmdb-mark command: the dnf5 counterpart of //dnf:mark, writing package headers into an rpmdb.
+cc_library(
+    name = "rpmdb_mark_plugin",
+    srcs = [
+        "rpmdb_mark.cpp",
+        "rpmdb_mark.hpp",
+        "rpmdb_mark_cmd_plugin.cpp",
+    ],
+    copts = domain("dnf5-plugin-rpmdb-mark") + entry_points("dnf5_plugin", "rpmdb_mark"),
+    cxxopts = [
+        "-std=gnu++20",
+        "-include",
+        "bazel_compat.h",
+    ],
+    alwayslink = True,
+    deps = [
+        ":command_plugin",
+        "@dnf5_src//:common_obj",
+        "@dnf5_src//:headers",
+        "@dnf5_src//:libdnf5",
+        "@dnf5_src//:libdnf5-cli",
+        "@rpm",
+        "@rpm//:rpmio",
+    ],
+)

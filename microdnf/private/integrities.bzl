@@ -4,10 +4,6 @@ RELEASE_TAG = "microdnf-prebuilt-vc6a9aa9.bcr.1"
 BASE_URL = "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1"
 
 INTEGRITIES = {
-    "dnf_lock_linux_amd64": "sha256-DS9IKJQGwBfvMWwxqOx9CaZkU8G03ISaansnbrlj45g=",
-    "dnf_lock_linux_arm64": "sha256-l8d9MgIKXR2uNMCN9Zn0+L9xeBUliNORxQE/C9Ulw9E=",
-    "dnf_lock_osx_amd64": "sha256-CeUC3dKvDi8OSP5nTVjqw+4rMEkPqVtLWdiLLJogE6o=",
-    "dnf_lock_osx_arm64": "sha256-2ate0QSXhzwbouVV7SLLTezmEIB1xQYKeWw7Jb00hgQ=",
     "microdnf_linux_amd64": "sha256-rI5xWx1HqglmqYwVReUAJ9xH2XvHqq/2Fn9FRKEFLUs=",
     "microdnf_linux_arm64": "sha256-HP133wjJ/4D1dmsTmTYzcJPqQXoilHmBEdnmQM9G3Ss=",
     "microdnf_osx_amd64": "sha256-iCK4GdRjcBp233vRBIsoY8p6djbZEcQyesiohnPjJeM=",

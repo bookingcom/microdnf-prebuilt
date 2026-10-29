@@ -9,6 +9,22 @@ RpmLockFileInfo = provider(
     },
 )
 
+DnfConfigInfo = provider(
+    doc = "A rendered dnf5 configuration and the command line preamble that pins it.",
+    fields = {
+        "arch": "Target architectures",
+        "args_file": "File with the preamble, one argument per line, path tokens unexpanded",
+        "conf": "The rendered dnf.conf; its directory is @CONFDIR@ in the preamble",
+        "files": "Depset of everything the preamble refers to (dnf.conf, repos.d, repository files)",
+        "forcearch": "Architecture passed as --forcearch, or empty",
+        "module_enable": "Module streams (NAME:STREAM) the consuming action enables",
+        "preamble": "List of dnf5 arguments with the tokens @CONFDIR@, @TMP@ and @REPODIR@ for the consumer to expand",
+        "releasever": "Release version passed as --releasever",
+        "repo_dir": "Execroot-relative directory of the local repository, the value of @REPODIR@",
+        "repos": "List of rendered .repo files",
+    },
+)
+
 RpmInfo = provider(
     doc = "Propagates RPM target metadata, architecture, and files.",
     fields = {

@@ -1,108 +1,63 @@
 #!/usr/bin/env bash
+# rpm_mark and the standalone `dnf5 rpmdb-mark` write an rpmdb with exactly curl and its dependency libcurl.
 set -euo pipefail
 
 CURL_BIN="$1"
-RPMDB_DIR="$2"
-MARK_BIN="$3"
-OL9_REPO="$4"
-OL9_REPO_DIR="$5"
+DNF5_RPMDB_DIR="$2"
+DNF5="$3"
+CONF="$4"
+REPO_DIR="$5"
+
+source "$(dirname "$0")/dnf5_lib.sh"
 
 echo "=== 1. Verifying Oracle Linux 9 curl binary extraction ==="
-if [ ! -f "${CURL_BIN}" ]; then
-  echo "Error: curl binary not found: ${CURL_BIN}"
-  exit 1
-fi
+test -x "${CURL_BIN}"
+file -L "${CURL_BIN}" | grep -q "ELF 64-bit"
 
-if [ ! -x "${CURL_BIN}" ]; then
-  echo "Error: curl binary is not executable: ${CURL_BIN}"
-  exit 1
-fi
-
-# Verify ELF header
-if ! file "${CURL_BIN}" | grep -q "ELF 64-bit"; then
-  echo "Error: ${CURL_BIN} is not an ELF 64-bit binary"
-  exit 1
-fi
-echo "Verified: ${CURL_BIN} is an executable ELF 64-bit binary from Oracle Linux 9."
-
-echo "=== 2. Verifying rpm_mark generated rpmdb ==="
-if [ ! -d "${RPMDB_DIR}" ]; then
-  echo "Error: rpmdb directory not found: ${RPMDB_DIR}"
-  exit 1
-fi
-
-SQLITE_DB="${RPMDB_DIR}/var/lib/rpm/rpmdb.sqlite"
-if [ ! -f "${SQLITE_DB}" ]; then
-  echo "Error: SQLite RPM DB not found at ${SQLITE_DB}"
-  exit 1
-fi
-echo "Verified: rpmdb.sqlite exists at ${SQLITE_DB}."
-
-echo "=== 3. Inspecting rpmdb contents (Sysdig / Syft scanner verification) ==="
-python3 -c "
+# The package keys of an rpmdb: names, header digests and provides, one "table key" per line, sorted. Not the bytes of
+# the database, which hold the install time.
+keys() {
+  python3 -I -c "
 import sqlite3, sys
+con = sqlite3.connect('file:' + sys.argv[1] + '?mode=ro', uri=True)
+for table in ('Name', 'Sha1header', 'Providename'):
+    for (key,) in con.execute('SELECT DISTINCT key FROM ' + table):
+        print(table, key)
+" "$1" | sort
+}
 
-con = sqlite3.connect('${SQLITE_DB}')
-cur = con.cursor()
+echo "=== 2. rpm_mark generated an rpmdb holding exactly curl and libcurl ==="
+SQLITE_DB="${DNF5_RPMDB_DIR}/var/lib/rpm/rpmdb.sqlite"
+test -f "${SQLITE_DB}"
+expect_packages() {
+  diff <(printf 'Name curl\nName libcurl\n') <(keys "$1" | grep '^Name ')
+  test "$(python3 -I -c "
+import sqlite3, sys
+print(sqlite3.connect('file:' + sys.argv[1] + '?mode=ro', uri=True).execute('SELECT count(*) FROM Packages').fetchone()[0])
+" "$1")" = 2
+}
+expect_packages "${SQLITE_DB}"
 
-names = [row[0] for row in cur.execute('SELECT DISTINCT key FROM Name')]
-print('Installed packages in rpmdb:', names)
+echo "=== 3. Standalone dnf5 rpmdb-mark on a staging root, unprivileged ==="
+WORK="$(mktemp -d)"
+trap 'rm -rf "${WORK}"' EXIT
+mkdir -p "${WORK}/root"
+dnf5_preamble "${CONF}" "${REPO_DIR}" "${WORK}"
+STAGING_ROOT="${WORK}/multistage_docker_image"
+"${DNF5}" "${PREAMBLE[@]}" rpmdb-mark --rpmdb-root="${STAGING_ROOT}" --archlist=x86_64 "curl=7.76.1-40.el9_8.8"
+expect_packages "${STAGING_ROOT}/var/lib/rpm/rpmdb.sqlite"
+diff <(keys "${SQLITE_DB}") <(keys "${STAGING_ROOT}/var/lib/rpm/rpmdb.sqlite")
 
-if 'curl' not in names:
-    sys.exit('Error: curl package not found in rpmdb')
+echo "=== 4. --nodeps marks the named package alone, a plain name finds the newest ==="
+"${DNF5}" "${PREAMBLE[@]}" rpmdb-mark --rpmdb-root="${WORK}/nodeps" --archlist=x86_64 --nodeps curl
+keys "${WORK}/nodeps/var/lib/rpm/rpmdb.sqlite" | grep -qx 'Name curl'
+! keys "${WORK}/nodeps/var/lib/rpm/rpmdb.sqlite" | grep -qx 'Name libcurl'
 
-if 'libcurl' not in names:
-    sys.exit('Error: libcurl (transitive dependency) not found in rpmdb')
-
-# Verify package headers in Packages table
-rows = cur.execute('SELECT count(*) FROM Packages').fetchone()
-print(f'Total packages in Packages table: {rows[0]}')
-if rows[0] < 2:
-    sys.exit('Error: Expected at least 2 packages in Packages table')
-"
-
-echo "=== 4. Testing standalone 'mark' CLI tool on a staging multistage docker image ==="
-STAGING_ROOT="${TEST_TMPDIR}/multistage_docker_image"
-rm -rf "${STAGING_ROOT}"
-mkdir -p "${STAGING_ROOT}/usr/bin"
-
-# Step A: Add curl binary to image
-cp "${CURL_BIN}" "${STAGING_ROOT}/usr/bin/curl"
-chmod 0755 "${STAGING_ROOT}/usr/bin/curl"
-echo "Added curl binary to ${STAGING_ROOT}/usr/bin/curl"
-
-# Step B: Prepare repo config with absolute path
-TMP_REPOS_DIR="${TEST_TMPDIR}/repos.d"
-mkdir -p "${TMP_REPOS_DIR}"
-sed "s|@REPO_DIR@|${PWD}/${OL9_REPO_DIR}|g" "${OL9_REPO}" > "${TMP_REPOS_DIR}/ol9.repo"
-
-# Step C: Run mark tool to mark curl as installed into rpmdb
-"${MARK_BIN}" \
-  --reposdir="${TMP_REPOS_DIR}" \
-  --installroot="${STAGING_ROOT}" \
-  --releasever="9" \
-  --archlist="x86_64" \
-  "curl=7.76.1-40.el9_8.8"
-
-# Step D: Verify rpmdb inside multistage image
-STAGING_SQLITE="${STAGING_ROOT}/var/lib/rpm/rpmdb.sqlite"
-if [ ! -f "${STAGING_SQLITE}" ]; then
-  echo "Error: Staging rpmdb.sqlite not found at ${STAGING_SQLITE}"
+echo "=== 5. An unknown package fails and writes no database ==="
+if "${DNF5}" "${PREAMBLE[@]}" rpmdb-mark --rpmdb-root="${WORK}/none" --archlist=x86_64 nosuchpkg; then
+  echo "Error: marking an unknown package succeeded"
   exit 1
 fi
-
-python3 -c "
-import sqlite3, sys
-
-con = sqlite3.connect('${STAGING_SQLITE}')
-cur = con.cursor()
-
-names = [row[0] for row in cur.execute('SELECT DISTINCT key FROM Name')]
-print('Staging rpmdb packages:', names)
-
-assert 'curl' in names, 'curl not found in staging rpmdb'
-assert 'libcurl' in names, 'libcurl not found in staging rpmdb'
-print('Verified: Oracle Linux 9 curl binary marked as installed with minimal transitive dependencies in staging rpmdb.')
-"
+test ! -e "${WORK}/none/var/lib/rpm/rpmdb.sqlite"
 
 echo "ALL TESTS PASSED SUCCESSFULLY!"

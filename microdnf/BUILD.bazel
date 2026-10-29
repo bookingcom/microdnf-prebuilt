@@ -62,13 +62,15 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "dnf5",
+    actual = "//:dnf5",
+    visibility = ["//visibility:public"],
+)
+
 # Host toolchain implementation selects the prebuilt binary matching host platform
 microdnf_toolchain(
     name = "toolchain_impl_host",
-    dnf_lock = select({
-        ":is_" + platform: "@dnf_lock_" + platform + "//file"
-        for platform in SUPPORTED_PLATFORMS
-    }),
     microdnf = select({
         ":is_" + platform: "@microdnf_" + platform + "//file"
         for platform in SUPPORTED_PLATFORMS
@@ -90,7 +92,6 @@ toolchain(
 [
     microdnf_toolchain(
         name = "toolchain_impl_" + platform,
-        dnf_lock = "@dnf_lock_" + platform + "//file",
         microdnf = "@microdnf_" + platform + "//file",
         rpm2archive = "@rpm2archive_" + platform + "//file",
     )
