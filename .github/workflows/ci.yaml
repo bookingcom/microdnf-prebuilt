@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     tags: ["*"]
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   BUILDBUDDY_ENDPOINT: ${{ vars.BUILDBUDDY_ENDPOINT || 'manuelfrancisconaranjo.buildbuddy.io' }}
@@ -18,13 +18,13 @@ env:
 jobs:
   # Post-merge pushes to main, tags, and manual workflow dispatches: trusted runs with NO approvals
   build:
-    if: github.event_name != 'pull_request_target'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@9f0750536d239de15c1f8528e2ba6c17a99fb752 # 0.19.1
@@ -45,18 +45,17 @@ jobs:
       - name: Test
         run: bazel test //... --config=ci
 
-  # Pull requests (forks & local PRs): gated behind pr-secrets environment approval
+  # Pull requests: gated behind pr-secrets environment approval. Fork PRs get no secrets
+  # (setup_buildbuddy.sh then falls back to the local Docker sandbox).
   integration-tests:
-    if: github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     environment: pr-secrets # Pauses here until a maintainer approves in the UI
     permissions:
       contents: read
     steps:
-      - name: Checkout PR code in merged state
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: refs/pull/${{ github.event.number }}/merge
+      - name: Checkout PR code in merged state (the default ref of pull_request)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@9f0750536d239de15c1f8528e2ba6c17a99fb752 # 0.19.1

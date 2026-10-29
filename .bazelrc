@@ -73,5 +73,20 @@ common:ci --ui_event_filters=-warning
 test:ci --test_output=errors
 test:ci --test_summary=terse
 
+# AddressSanitizer + LeakSanitizer probe (dnf_lock e2e). Applies to every C dep built from source.
+build:asan --@llvm//config:asan=true
+build:asan --@llvm//config:ubsan=true
+# GLib/GObject cast every class_init/base_init callback to GBaseInitFunc & co; clang's -fsanitize=function
+# flags each one. Proven third-party noise, dropped globally rather than suppressed.
+build:asan --copt=-fno-sanitize=function
+build:asan --copt=-fno-omit-frame-pointer
+build:asan --copt=-g1
+build:asan --strip=never
+test:asan --test_env=ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1:print_summary=1
+test:asan --test_env=LSAN_OPTIONS=suppressions=sanitizers/lsan.supp:print_suppressions=0
+test:asan --test_env=UBSAN_OPTIONS=print_stacktrace=1:suppressions=sanitizers/ubsan.supp:halt_on_error=1
+test:asan --test_output=all
+test:asan --test_timeout=900
+
 # Import user-specific configuration (must be last)
 try-import %workspace%/.bazelrc.user
