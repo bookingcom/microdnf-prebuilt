@@ -1,0 +1,16 @@
+--- a/libdnf5/plugin/utils.cpp
++++ b/libdnf5/plugin/utils.cpp
+@@ -32,6 +32,13 @@
+         dirs = {conf_value.begin(), conf_value.end()};
+     }
+ 
++    if (!config.get_use_host_config_option().get_value()) {
++        const std::filesystem::path installroot{config.get_installroot_option().get_value()};
++        for (auto & dir : dirs) {
++            dir = installroot / dir.relative_path();
++        }
++    }
++
+     return dirs;
+ }
+ 

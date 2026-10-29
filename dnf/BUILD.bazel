@@ -154,6 +154,7 @@ cc_binary(
         name = "microdnf_" + platform,
         binary = ":microdnf",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -164,6 +165,7 @@ filegroup(
         ":microdnf_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
+    tags = ["manual"],
 )
 
 cc_binary(
@@ -188,6 +190,7 @@ cc_binary(
         name = "rpm2archive_" + platform,
         binary = ":rpm2archive",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -198,6 +201,7 @@ filegroup(
         ":rpm2archive_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
+    tags = ["manual"],
 )
 
 cc_binary(
@@ -207,6 +211,7 @@ cc_binary(
         "lock.c",
         "lock.h",
         "lock-main.c",
+        "solve-arch.h",
     ],
     copts = COMMON_COPTS,
     defines = [
@@ -234,6 +239,7 @@ cc_binary(
         name = "dnf_lock_" + platform,
         binary = ":dnf_lock",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -244,6 +250,7 @@ filegroup(
         ":dnf_lock_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
+    tags = ["manual"],
 )
 
 cc_binary(
@@ -253,6 +260,7 @@ cc_binary(
         "mark.c",
         "mark.h",
         "mark-main.c",
+        "solve-arch.h",
     ],
     copts = COMMON_COPTS,
     defines = [
@@ -302,6 +310,7 @@ alias(
         name = "rpm2files_" + platform,
         binary = "//rpm2files:rpm2files",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -310,6 +319,34 @@ filegroup(
     name = "rpm2files_all",
     srcs = [
         ":rpm2files_" + platform
+        for platform in SUPPORTED_PLATFORMS
+    ],
+    tags = ["manual"],
+)
+
+# Upstream's dnf5 with the lock command linked in, see dnf5/main.cpp (DNF5_BUILTIN_PLUGINS). Not called dnf5: the
+# output file would be the directory of the sources in dnf5/.
+cc_binary(
+    name = "dnf5_binary",
+    deps = [
+        "@dnf5_src//:dnf5_main",
+        "//dnf/dnf5:lock_plugin",
+    ],
+)
+
+[
+    platform_transition_binary(
+        name = "dnf5_" + platform,
+        binary = ":dnf5_binary",
+        target_platform = "//bazel:" + platform,
+    )
+    for platform in SUPPORTED_PLATFORMS
+]
+
+filegroup(
+    name = "dnf5_all",
+    srcs = [
+        ":dnf5_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
 )
