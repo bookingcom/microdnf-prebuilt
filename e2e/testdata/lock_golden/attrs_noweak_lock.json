@@ -1,0 +1,25 @@
+{
+  "version":1,
+  "arch":"x86_64,noarch",
+  "requested":[
+    "weakapp"
+  ],
+  "packages":[
+    {
+      "name":"weakapp",
+      "version":"1.0-1",
+      "arch":"noarch",
+      "nevra":"weakapp-1.0-1.noarch",
+      "url":"file:@EXECROOT@\/_main\/bazel-out\/@CONFIG@\/bin\/e2e\/testdata\/features-repo\/features\/weakapp-1.0-1.noarch.rpm",
+      "integrity":"sha256-9SNAe\/S+inRsmpXdwGnDEI3vmXGyXiNBc48kVlDbxjM=",
+      "checksum":"f523407bf4be8a746c9a95ddc069c3108def9971b25e2341738f245650dbc633",
+      "requested":true,
+      "dependencies":[],
+      "dependencies_nevra":[],
+      "recommends":[
+        "weakdep"
+      ],
+      "transitive_dependencies":[]
+    }
+  ]
+}

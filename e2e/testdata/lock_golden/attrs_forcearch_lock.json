@@ -1,0 +1,22 @@
+{
+  "version":1,
+  "arch":"x86_64,noarch",
+  "requested":[
+    "expat"
+  ],
+  "packages":[
+    {
+      "name":"expat",
+      "version":"2.7.3-1.el10_2.7",
+      "arch":"x86_64",
+      "nevra":"expat-2.7.3-1.el10_2.7.x86_64",
+      "url":"file:@EXECROOT@\/_main\/bazel-out\/@CONFIG@\/bin\/e2e\/testdata\/features-repo\/features\/expat-2.7.3-1.el10_2.7.x86_64.rpm",
+      "integrity":"sha256-pCsZ50iIcwEbU\/PoG6UMXmNItS9QFwvG7b\/mzvqrtBQ=",
+      "checksum":"a42b19e7488873011b53f3e81ba50c5e6348b52f50170bc6edbfe6cefaabb414",
+      "requested":true,
+      "dependencies":[],
+      "dependencies_nevra":[],
+      "transitive_dependencies":[]
+    }
+  ]
+}

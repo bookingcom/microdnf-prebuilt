@@ -1,0 +1,182 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load(":defs.bzl", "domain", "entry_points")
+
+package(default_visibility = ["//visibility:public"])
+
+# dnf5 is one static binary. Upstream builds libdnf5, libdnf5-cli and every plugin as shared objects and dlopen()s
+# the plugins from the host; here the plugins are linked in and nothing is loaded from the host.
+
+_CXXOPTS = [
+    "-std=gnu++20",
+    # Stands in for patches to upstream files that assume glibc and libstdc++.
+    "-include",
+    "bazel_compat.h",
+]
+
+_VERSION = [
+    "PROJECT_VERSION_PRIME=5",
+    "PROJECT_VERSION_MAJOR=4",
+    "PROJECT_VERSION_MINOR=6",
+    "PROJECT_VERSION_MICRO=0",
+]
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["**/*.h", "**/*.hpp", "**/*.sql"]),
+    includes = [
+        "common",
+        "compat",
+        "dnf5/include",
+        "include",
+    ] + select({
+        "@platforms//os:macos": ["compat/darwin"],
+        "//conditions:default": [],
+    }),
+    # libsolv spells its "requires" field dep_requires, as that is a C++20 keyword.
+    defines = ["LIBSOLV_SOLVABLE_PREPEND_DEP"],
+    deps = ["@glib//:glib"],
+)
+
+cc_library(
+    name = "common_obj",
+    srcs = glob(["common/**/*.cpp"]),
+    cxxopts = _CXXOPTS,
+    deps = [
+        ":headers",
+        "@fmt",
+    ],
+)
+
+# libdnf5 and its plugins refer to each other: plugins.cpp calls the plugins' entry points, the plugins call into
+# libdnf5. Static archives are scanned once in order, so the plugins are alwayslink and depend on the core library,
+# which puts them before it on the link line; the empty :libdnf5 library below ties the three together.
+# name, directory, extra deps
+_LIBDNF5_PLUGINS = [
+    ("actions", "actions", ["@json-c"]),
+    ("expired_pgp_keys", "expired-pgp-keys", ["@rpm", "@rpm//:rpmio"]),
+    ("local", "local", []),
+]
+
+[
+    cc_library(
+        name = "libdnf5_plugin_" + name,
+        srcs = glob(["libdnf5-plugins/%s/**/*.cpp" % dir]),
+        copts = domain("libdnf5-plugin-" + dir) + entry_points("libdnf_plugin", name),
+        cxxopts = _CXXOPTS,
+        local_defines = ["WITH_MODULEMD"],
+        alwayslink = True,
+        deps = [
+            ":common_obj",
+            ":headers",
+            ":libdnf5_core",
+            "@fmt",
+        ] + deps,
+    )
+    for (name, dir, deps) in _LIBDNF5_PLUGINS
+]
+
+cc_library(
+    name = "libdnf5_core",
+    srcs = glob([
+        "libdnf5/**/*.c",
+        "libdnf5/**/*.cpp",
+    ]),
+    copts = domain("libdnf5"),
+    cxxopts = _CXXOPTS,
+    local_defines = _VERSION + [
+        "LIBSOLV_FLAG_FOCUSNEW=1",
+        "WITH_MODULEMD",
+    ],
+    # Private headers are included relative to libdnf5/.
+    includes = ["libdnf5"],
+    deps = [
+        ":common_obj",
+        ":headers",
+        "@fmt",
+        "@glib//:gio",
+        "@glib//:glib",
+        "@glib//:gobject",
+        "@json-c",
+        "@libmodulemd//:modulemd",
+        "@librepo//:librepo",
+        "@libsolv//:libsolv",
+        "@libsolv//:libsolvext",
+        "@libxml2",
+        "@rpm",
+        "@rpm//:rpmio",
+        "@sqlite3",
+        "@toml11",
+    ],
+)
+
+cc_library(
+    name = "libdnf5",
+    deps = [":libdnf5_core"] + [":libdnf5_plugin_" + p[0] for p in _LIBDNF5_PLUGINS],
+)
+
+cc_library(
+    name = "libdnf5-cli",
+    srcs = glob(["libdnf5-cli/**/*.cpp"]),
+    copts = domain("libdnf5-cli"),
+    cxxopts = _CXXOPTS,
+    includes = ["libdnf5-cli"],
+    deps = [
+        ":common_obj",
+        ":headers",
+        ":libdnf5",
+        "@fmt",
+        "@json-c",
+        "@smartcols",
+    ],
+)
+
+# name, directory, gettext domain, extra defines, extra deps
+_CMD_PLUGINS = [
+    ("changelog", "changelog", "dnf5-plugin-changelog", [], []),
+    # dnf5 itself has a RepoCommand class too; keep the symbols apart.
+    ("config_manager", "config-manager", "dnf5-plugin-config-manager", ["RepoCommand=ConfigManagerRepoCommand"], ["@zlib"]),
+    ("copr", "copr", "dnf5-plugin-copr", [], ["@json-c"]),
+    ("repoclosure", "repoclosure", "dnf5-plugin-repoclosure", [], []),
+    ("repomanage", "repomanage", "dnf5-plugin-repomanage", [], []),
+    ("reposync", "reposync", "dnf5-plugin-reposync", [], []),
+]
+
+[
+    cc_library(
+        name = name + "_cmd_plugin",
+        srcs = glob(["dnf5-plugins/%s_plugin/**/*.cpp" % dir]),
+        copts = domain(gettext) + ["-D" + d for d in defines] + entry_points("dnf5_plugin", name),
+        cxxopts = _CXXOPTS,
+        local_defines = ["WITH_MODULEMD"],
+        deps = [
+            ":common_obj",
+            ":headers",
+            ":libdnf5",
+            ":libdnf5-cli",
+            "@fmt",
+        ] + deps,
+    )
+    for (name, dir, gettext, defines, deps) in _CMD_PLUGINS
+]
+
+# The program, as a library: the binary is linked outside this module, where the commands that are not upstream's
+# (see dnf5/main.cpp, DNF5_BUILTIN_PLUGINS) are added. It is alwayslink as nothing but main() refers to it.
+cc_library(
+    name = "dnf5_main",
+    srcs = glob(["dnf5/**/*.cpp"]),
+    copts = domain("dnf5"),
+    cxxopts = _CXXOPTS,
+    includes = ["dnf5"],
+    linkopts = ["-ldl"],
+    local_defines = _VERSION + ["WITH_MODULEMD"],
+    alwayslink = True,
+    deps = [
+        ":common_obj",
+        ":headers",
+        ":libdnf5",
+        ":libdnf5-cli",
+        "@fmt",
+        "@rpm",
+        "@rpm//:rpmio",
+    ] + [":%s_cmd_plugin" % p[0] for p in _CMD_PLUGINS],
+)

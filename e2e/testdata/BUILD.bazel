@@ -1,11 +1,13 @@
 load("@aspect_rules_py//py:defs.bzl", "py_binary")
 load("@bazel_lib//lib:run_binary.bzl", "run_binary")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "aarch64.lock.json",
     "changed_integrity.lock.json",
+    "features.repo",
     "generate_repodata.py",
     "ol9_repo/curl-7.76.1-40.el9_8.8.x86_64.rpm",
     "ol9_repo/libcurl-7.76.1-40.el9_8.8.x86_64.rpm",
@@ -49,7 +51,50 @@ filegroup(
     ],
 )
 
+# Synthetic metadata-only repository for the dnf5 lock option tests
+run_binary(
+    name = "generate_features_repodata",
+    tool = ":generate_repodata",
+    args = [
+        "--scenario",
+        "features",
+        "--out-dir",
+        "$(RULEDIR)/features-repo/repodata",
+    ],
+    outs = [
+        "features-repo/repodata/filelists.xml.gz",
+        "features-repo/repodata/modules.yaml.gz",
+        "features-repo/repodata/other.xml.gz",
+        "features-repo/repodata/primary.xml.gz",
+        "features-repo/repodata/repomd.xml",
+    ],
+)
+
+filegroup(
+    name = "features_repo_files",
+    srcs = [":generate_features_repodata"],
+)
+
 filegroup(
     name = "ol9_repo_files",
     srcs = glob(["ol9_repo/**"]),
+)
+
+# Golden lockfiles of the rpm_lock cases in //e2e (normalized, see //e2e:normalize_lock). The generated tests diff the
+# lockfiles against them; to accept a change run `bazel run //e2e/testdata:lock_golden`.
+write_source_files(
+    name = "lock_golden",
+    files = {
+        "lock_golden/test_generated_lock.json": "//e2e:test_generated_lock_norm.json",
+        "lock_golden/layer2_already_installed_lock.json": "//e2e:layer2_already_installed_lock_norm.json",
+        "lock_golden/layer2_incremental_lock.json": "//e2e:layer2_incremental_lock_norm.json",
+        "lock_golden/layer2_both_lock.json": "//e2e:layer2_both_lock_norm.json",
+        "lock_golden/changed_integrity_lock.json": "//e2e:changed_integrity_lock_norm.json",
+        "lock_golden/attrs_excludepkgs_lock.json": "//e2e:attrs_excludepkgs_lock_norm.json",
+        "lock_golden/attrs_nobest_lock.json": "//e2e:attrs_nobest_lock_norm.json",
+        "lock_golden/attrs_noweak_lock.json": "//e2e:attrs_noweak_lock_norm.json",
+        "lock_golden/attrs_module_lock.json": "//e2e:attrs_module_lock_norm.json",
+        "lock_golden/attrs_forcearch_lock.json": "//e2e:attrs_forcearch_lock_norm.json",
+    },
+    tags = ["lock_golden"],
 )

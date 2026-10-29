@@ -1,0 +1,8 @@
+{
+  "version":1,
+  "arch":"x86_64,noarch",
+  "requested":[
+    "tour"
+  ],
+  "packages":[]
+}

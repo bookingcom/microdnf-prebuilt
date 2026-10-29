@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Runs dnf_lock --lockfile on small metadata-only repos and checks what it locks on top of the layer below.
+"""Runs `dnf5 lock --lockfile` on small metadata-only repos and checks what it locks on top of the layer below.
 
-Args: <dnf_lock>
+Args: <dnf5> <preamble.args of a dnf_config>.
 """
 
 import base64
@@ -13,8 +13,24 @@ import subprocess
 import sys
 import tempfile
 
-DNF_LOCK = os.path.abspath(sys.argv[1])
+DNF5 = os.path.abspath(sys.argv[1])
+DNF5_PREAMBLE = os.path.abspath(sys.argv[2])
 TMP = tempfile.mkdtemp()
+
+
+def lock_command(root, archlist, request):
+    """The command line that locks request on top of root/below.lock.json."""
+    with open(f"{root}/dnf.conf", "w", encoding="utf-8") as f:
+        f.write("[main]\nbest=True\ninstall_weak_deps=True\nplugins=False\nprotected_packages=\nuser_agent=libdnf\n")
+    os.makedirs(f"{root}/tmp/root")
+    with open(DNF5_PREAMBLE, encoding="utf-8") as f:
+        preamble = [line.replace("@CONFDIR@", root).replace("@REPODIR@", root).replace("@TMP@", f"{root}/tmp")
+                    for line in f.read().splitlines()]
+    return [DNF5, *preamble, "lock", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
+            "-o", f"{root}/out.json", *request]
+
+
+LAST_OUT = {}  # the lockfile the last successful lock() wrote
 
 
 def pkgid(name, ver, arch):
@@ -38,7 +54,8 @@ def write_repo(root, pkgs):
     for p in pkgs:
         name, ver, arch = p["name"], p.get("ver", "1"), p.get("arch", "noarch")
         deps = (entries("provides", [(name, ver)] + p.get("provides", [])) +
-                entries("requires", p.get("requires", [])) + entries("obsoletes", p.get("obsoletes", [])))
+                entries("requires", p.get("requires", [])) + entries("obsoletes", p.get("obsoletes", [])) +
+                entries("recommends", p.get("recommends", [])))
         xml.append(f"""<package type="rpm"><name>{name}</name><arch>{arch}</arch>
 <version epoch="0" ver="{ver}" rel="1"/><checksum type="sha256" pkgid="YES">{pkgid(name, ver, arch)}</checksum>
 <summary>s</summary><description>d</description><packager/><url/><time file="1" build="1"/>
@@ -66,7 +83,7 @@ def write_repo(root, pkgs):
 
 
 def locked(name, ver="1", arch="noarch"):
-    """A lockfile entry for a package of write_repo, as dnf_lock writes it."""
+    """A lockfile entry for a package of write_repo, as `dnf5 lock` writes it."""
     integrity = "sha256-" + base64.b64encode(bytes.fromhex(pkgid(name, ver, arch))).decode()
     return {"name": name, "version": f"{ver}-1", "arch": arch, "nevra": f"{name}-{ver}-1.{arch}",
             "integrity": integrity}
@@ -78,15 +95,14 @@ def lock(case, repo, below, request, archlist="x86_64,i686,noarch"):
     write_repo(root, repo)
     with open(f"{root}/below.lock.json", "w", encoding="utf-8") as f:
         json.dump({"version": 1, "arch": archlist, "packages": below}, f)
-    r = subprocess.run([DNF_LOCK, f"--reposdir={root}/repos.d", f"--setopt=cachedir={root}/cache",
-                        "--releasever=9", f"--archlist={archlist}", f"--lockfile={root}/below.lock.json",
-                        "-o", f"{root}/out.json", *request], capture_output=True, text=True, check=False)
+    r = subprocess.run(lock_command(root, archlist, request), capture_output=True, text=True, check=False)
     nevras = []
     obsoleted = []
     if r.returncode == 0:
         with open(f"{root}/out.json", encoding="utf-8") as f:
             data = json.load(f)
             nevras = sorted(p["nevra"] for p in data["packages"])
+            LAST_OUT.update(data)
             obsoleted = data.get("obsoleted", [])
     return r.returncode, nevras, r.stderr, obsoleted
 
@@ -127,6 +143,71 @@ CASE = "obsoleting a package below records it and warns"
 rc, nevras, err, obsoleted = lock(CASE, [{"name": "old"}, {"name": "new", "obsoletes": ["old"]}], [locked("old")], ["new"])
 check(CASE, (rc, nevras, obsoleted, "the solve obsoletes old-1-1.noarch from a layer below" in err),
       (0, ["new-1-1.noarch"], [{"name": "old", "version": "1-1", "arch": "noarch", "nevra": "old-1-1.noarch"}], True), err)
+
+# A layer entry without integrity means "same build". The old code compared it with the repo's integrity
+# via g_strcmp0 (NULL vs "sha256-..." is nonzero), so a requested package installed at the same NEVRA was
+# locked again. A package kept as it is does not bring in its Recommends ("dep"), as in dnf; "extra" is unrelated.
+APP1 = [{"name": "app", "ver": "1", "recommends": ["dep"]}, {"name": "dep"}, {"name": "extra"}]
+APP12 = [{"name": "app", "ver": "2", "recommends": ["dep"]}, *APP1]
+NO_INTEGRITY = {k: v for k, v in locked("app", "1").items() if k != "integrity"}
+for CASE, repo, entry, want in [
+        ("a layer entry without integrity at the same NEVRA is unchanged", APP1, NO_INTEGRITY,
+         ["extra-1-1.noarch"]),
+        ("a layer entry with an empty integrity at the same NEVRA is unchanged", APP1,
+         {**NO_INTEGRITY, "integrity": ""}, ["extra-1-1.noarch"]),
+        ("a layer entry without integrity at another NEVRA is replaced", APP12, NO_INTEGRITY,
+         ["app-2-1.noarch", "extra-1-1.noarch"]),
+        ("a layer entry with another integrity counts as changed", APP1,
+         {**NO_INTEGRITY, "integrity": "sha256-AAAA"}, ["app-1-1.noarch", "dep-1-1.noarch", "extra-1-1.noarch"])]:
+    rc, nevras, err, obsoleted = lock(CASE, repo, [entry], ["app", "extra"])
+    check(CASE, (rc, nevras), (0, want), err)
+
+# dnf leaves a package alone when the layer below holds it at the repositories' version or newer, so the
+# Recommends of the repositories' copy are not installed. An install job for that copy would count them.
+PKG1 = [{"name": "pkg", "ver": "1", "recommends": ["rec"]}, {"name": "rec"}, {"name": "extra"}]
+for CASE, below_ver in [("a layer package newer than the repositories gets no weak dependencies", "2"),
+                        ("a layer package at the repositories' version gets no weak dependencies", "1")]:
+    below = {k: v for k, v in locked("pkg", below_ver).items() if k != "integrity"}
+    rc, nevras, err, obsoleted = lock(CASE, PKG1, [below], ["pkg", "extra"])
+    check(CASE, (rc, nevras), (0, ["extra-1-1.noarch"]), err)
+
+# An upgrade adds only the weak dependencies that are new: the Recommends the layer's build of the package
+# already made (and left unmet) stay out, as in `dnf update`. Known only when the repositories hold that build.
+CASE = "an upgrade skips the Recommends the layer's build left unmet"
+rc, nevras, err, obsoleted = lock(CASE, [{"name": "pkg", "ver": "1", "recommends": ["rec"]},
+                                         {"name": "pkg", "ver": "2", "recommends": ["rec", "rec2"]},
+                                         {"name": "rec"}, {"name": "rec2"}],
+                                  [{k: v for k, v in locked("pkg", "1").items() if k != "integrity"}], ["pkg"])
+check(CASE, (rc, nevras), (0, ["pkg-2-1.noarch", "rec2-1-1.noarch"]), err)
+
+# The lock records each package's Recommends and Supplements, so that a later lock knows what the layer's
+# build left unmet even when the repositories no longer hold that build.
+CASE = "a lockfile records the weak dependencies of its packages"
+rc, nevras, err, obsoleted = lock(CASE, [{"name": "pkg", "ver": "2", "recommends": ["rec", "rec2"]},
+                                         {"name": "rec"}, {"name": "rec2"}], [], ["pkg"])
+recorded = {p["name"]: p.get("recommends") for p in LAST_OUT["packages"]}
+check(CASE, (rc, recorded), (0, {"pkg": ["rec", "rec2"], "rec": None, "rec2": None}), err)
+
+UPGRADE = [{"name": "pkg", "ver": "2", "recommends": ["rec", "rec2"]}, {"name": "rec"}, {"name": "rec2"}]
+CASE = "an upgrade skips the Recommends recorded for a build the repositories lack"
+rc, nevras, err, obsoleted = lock(CASE, UPGRADE,
+                                  [{**locked("pkg", "1"), "recommends": ["rec"]}], ["pkg"])
+check(CASE, (rc, nevras), (0, ["pkg-2-1.noarch", "rec2-1-1.noarch"]), err)
+
+CASE = "an upgrade of a build without recorded Recommends locks all weak dependencies"
+rc, nevras, err, obsoleted = lock(CASE, UPGRADE, [locked("pkg", "1")], ["pkg"])
+check(CASE, (rc, nevras), (0, ["pkg-2-1.noarch", "rec-1-1.noarch", "rec2-1-1.noarch"]), err)
+
+# dnf installs the Recommends of what it installs (install_weak_deps=True), unless a layer below has them.
+CASE = "a Recommends missing below is locked with its package"
+rc, nevras, err, obsoleted = lock(CASE, [{"name": "app", "recommends": ["extra"]}, {"name": "extra"}, {"name": "base"}],
+                                  [locked("base")], ["app"])
+check(CASE, (rc, nevras), (0, ["app-1-1.noarch", "extra-1-1.noarch"]), err)
+
+CASE = "a Recommends installed below is not locked again"
+rc, nevras, err, obsoleted = lock(CASE, [{"name": "app", "recommends": ["extra"]}, {"name": "extra"}],
+                                  [locked("extra")], ["app"])
+check(CASE, (rc, nevras), (0, ["app-1-1.noarch"]), err)
 
 for CASE, entry, message in [
         ("a lockfile entry without a name is an error",
