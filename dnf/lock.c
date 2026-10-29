@@ -5,6 +5,7 @@
 
 #include "lock.h"
 #include "lock-repo.h"
+#include "dnf-goal.h"
 #include "dnf-utils.h"
 
 #include <stdio.h>
@@ -13,7 +14,9 @@
 #include <glib.h>
 #include <json-c/json.h>
 #include <librepo/librepo.h>
+#include <solv/evr.h>
 #include <solv/pool.h>
+#include <solv/pool_parserpmrichdep.h>
 #include <solv/repo.h>
 #include <solv/solvable.h>
 
@@ -29,7 +32,82 @@ typedef struct {
   GPtrArray *dependencies;          /* gchar* */
   GPtrArray *dependencies_nevra;    /* gchar* */
   GPtrArray *transitive_deps;       /* gchar* */
+  GPtrArray *recommends;            /* gchar*, dependency strings */
+  GPtrArray *supplements;           /* gchar*, dependency strings */
 } InstalledPkg;
+
+/* The strings of the array under @key of @obj, or NULL when there is no such array. */
+static GPtrArray *
+json_string_array (struct json_object *obj, const char *key)
+{
+  struct json_object *arr = NULL;
+  if (!json_object_object_get_ex (obj, key, &arr) || !json_object_is_type (arr, json_type_array))
+    return NULL;
+  GPtrArray *out = g_ptr_array_new_with_free_func (g_free);
+  int n = json_object_array_length (arr);
+  for (int i = 0; i < n; ++i)
+    {
+      struct json_object *item = json_object_array_get_idx (arr, i);
+      if (item)
+        g_ptr_array_add (out, g_strdup (json_object_get_string (item)));
+    }
+  return out;
+}
+
+/* The dependency @str as pool_dep2str writes it: a rich dependency in parentheses, or "name" /
+ * "name <op> evr". 0 when it is malformed. */
+static Id
+parse_dep (Pool *pool, const char *str)
+{
+  if (*str == '(')
+    return pool_parserpmrichdep (pool, str);
+
+  g_auto(GStrv) parts = g_strsplit (str, " ", 3);
+  if (!parts[0] || !*parts[0])
+    return 0;
+  Id name = pool_str2id (pool, parts[0], 1);
+  if (!parts[1])
+    return name;
+  int flags = 0;
+  for (const char *c = parts[1]; *c; ++c)
+    {
+      if (*c == '<')
+        flags |= REL_LT;
+      else if (*c == '=')
+        flags |= REL_EQ;
+      else if (*c == '>')
+        flags |= REL_GT;
+      else
+        return 0;
+    }
+  if (!flags || !parts[2] || !*parts[2])
+    return 0;
+  return pool_rel2id (pool, name, pool_str2id (pool, parts[2], 1), flags, 1);
+}
+
+/* Adds the dependency strings @deps to @new_id under @keyname. */
+static void
+add_dep_strings (Pool *pool, Repo *sys_repo, Id new_id, Id keyname, const GPtrArray *deps)
+{
+  for (guint i = 0; deps && i < deps->len; ++i)
+    {
+      Id dep = parse_dep (pool, g_ptr_array_index (deps, i));
+      if (dep)
+        repo_add_deparray (sys_repo, new_id, keyname, dep, 0);
+    }
+}
+
+/* Records the dependency array @off of @s under @key of @pkg_obj, as strings; nothing when it is empty. */
+static void
+add_dep_strings_to_json (struct json_object *pkg_obj, const char *key, Pool *pool, const Solvable *s, Offset off)
+{
+  if (!off)
+    return;
+  struct json_object *arr = json_object_new_array ();
+  for (Id *dp = s->repo->idarraydata + off; *dp; dp++)
+    json_object_array_add (arr, json_object_new_string (pool_dep2str (pool, *dp)));
+  json_object_object_add (pkg_obj, key, arr);
+}
 
 static void
 installed_pkg_free (InstalledPkg *pkg)
@@ -49,6 +127,10 @@ installed_pkg_free (InstalledPkg *pkg)
     g_ptr_array_unref (pkg->dependencies_nevra);
   if (pkg->transitive_deps)
     g_ptr_array_unref (pkg->transitive_deps);
+  if (pkg->recommends)
+    g_ptr_array_unref (pkg->recommends);
+  if (pkg->supplements)
+    g_ptr_array_unref (pkg->supplements);
   g_free (pkg);
 }
 
@@ -69,6 +151,72 @@ lookup_installed (GHashTable *installed_by_key, DnfPackage *pkg, const gchar **i
   g_autofree gchar *key = installed_key (dnf_package_get_name (pkg), dnf_package_get_arch (pkg),
                                          dnf_package_get_nevra (pkg), installonly);
   return g_hash_table_lookup (installed_by_key, key);
+}
+
+static gchar *
+compute_package_integrity (DnfPackage *pkg);
+
+/* TRUE if the layer's recorded integrity says @pkg is a different build. A missing or
+ * empty integrity on either side says nothing, so it counts as the same build. */
+static gboolean
+layer_integrity_differs (const gchar *layer_integrity, DnfPackage *pkg)
+{
+  if (!layer_integrity || !*layer_integrity)
+    return FALSE;
+  g_autofree gchar *integrity = compute_package_integrity (pkg);
+  return integrity && *integrity && g_strcmp0 (layer_integrity, integrity) != 0;
+}
+
+/* Copies the dependency array @from_off of @from, under @keyname, onto @new_id. */
+static void
+copy_deparray (Repo *sys_repo, Id new_id, const Solvable *from, Id keyname, Offset from_off)
+{
+  if (!from_off)
+    return;
+  for (Id *dp = from->repo->idarraydata + from_off; *dp; dp++)
+    repo_add_deparray (sys_repo, new_id, keyname, *dp, 0);
+}
+
+/* The layer holds @inst at a NEVRA the repositories lack, so its own provides are unknown.
+ * Give the synthetic solvable @new_id those of the repositories' newest build of the name:
+ * sonames and file paths rarely change between builds, and a solvable that provides only its
+ * name leaves the layer's other packages, whose requires come from the repositories, unsatisfied.
+ * The build's provides on the name itself (name, name = evr, name(arch) = evr) are its own and
+ * are skipped. */
+static void
+add_provides_of_name (Pool *pool, Repo *sys_repo, Id new_id, DnfSack *sack, const InstalledPkg *inst,
+                      const gchar *opt_archlist)
+{
+  hy_autoquery HyQuery q = hy_query_create (sack);
+  hy_query_filter (q, HY_PKG_REPONAME, HY_NEQ, HY_SYSTEM_REPO_NAME);
+  hy_query_filter (q, HY_PKG_NAME, HY_EQ, inst->name);
+  if (inst->arch)
+    hy_query_filter (q, HY_PKG_ARCH, HY_EQ, inst->arch);
+  else if (opt_archlist)
+    {
+      g_auto(GStrv) archs = g_strsplit_set (opt_archlist, ", ", -1);
+      hy_query_filter_in (q, HY_PKG_ARCH, HY_EQ, (const char **)archs);
+    }
+  hy_query_filter_num (q, HY_PKG_LATEST_PER_ARCH, HY_EQ, 1);
+  g_autoptr(GPtrArray) builds = hy_query_run (q);
+  if (!builds || builds->len == 0)
+    return;
+
+  Solvable *s_build = pool_id2solvable (pool, dnf_package_get_id (g_ptr_array_index (builds, 0)));
+  if (!s_build->provides)
+    return;
+  const char *name = pool_id2str (pool, s_build->name);
+  gsize name_len = strlen (name);
+  for (Id *dp = s_build->repo->idarraydata + s_build->provides; *dp; dp++)
+    {
+      Id base = *dp;
+      while (ISRELDEP (base))
+        base = GETRELDEP (pool, base)->name;
+      const char *base_str = pool_id2str (pool, base);
+      if (strncmp (base_str, name, name_len) == 0 && (base_str[name_len] == '\0' || base_str[name_len] == '('))
+        continue;
+      repo_add_deparray (sys_repo, new_id, SOLVABLE_PROVIDES, *dp, 0);
+    }
 }
 
 static gchar *
@@ -218,50 +366,11 @@ parse_and_merge_lockfile (const gchar *path,
           if (json_object_object_get_ex (p_obj, "requested", &req_obj))
             pkg->requested = json_object_get_boolean (req_obj);
 
-          /* Dependencies */
-          struct json_object *deps_arr = NULL;
-          if (json_object_object_get_ex (p_obj, "dependencies", &deps_arr) &&
-              json_object_is_type (deps_arr, json_type_array))
-            {
-              pkg->dependencies = g_ptr_array_new_with_free_func (g_free);
-              int nd = json_object_array_length (deps_arr);
-              for (int d = 0; d < nd; ++d)
-                {
-                  struct json_object *d_item = json_object_array_get_idx (deps_arr, d);
-                  if (d_item)
-                    g_ptr_array_add (pkg->dependencies, g_strdup (json_object_get_string (d_item)));
-                }
-            }
-
-          /* Dependencies NEVRA */
-          struct json_object *deps_nevra_arr = NULL;
-          if (json_object_object_get_ex (p_obj, "dependencies_nevra", &deps_nevra_arr) &&
-              json_object_is_type (deps_nevra_arr, json_type_array))
-            {
-              pkg->dependencies_nevra = g_ptr_array_new_with_free_func (g_free);
-              int nd = json_object_array_length (deps_nevra_arr);
-              for (int d = 0; d < nd; ++d)
-                {
-                  struct json_object *d_item = json_object_array_get_idx (deps_nevra_arr, d);
-                  if (d_item)
-                    g_ptr_array_add (pkg->dependencies_nevra, g_strdup (json_object_get_string (d_item)));
-                }
-            }
-
-          /* Transitive dependencies */
-          struct json_object *trans_arr = NULL;
-          if (json_object_object_get_ex (p_obj, "transitive_dependencies", &trans_arr) &&
-              json_object_is_type (trans_arr, json_type_array))
-            {
-              pkg->transitive_deps = g_ptr_array_new_with_free_func (g_free);
-              int nd = json_object_array_length (trans_arr);
-              for (int d = 0; d < nd; ++d)
-                {
-                  struct json_object *d_item = json_object_array_get_idx (trans_arr, d);
-                  if (d_item)
-                    g_ptr_array_add (pkg->transitive_deps, g_strdup (json_object_get_string (d_item)));
-                }
-            }
+          pkg->dependencies = json_string_array (p_obj, "dependencies");
+          pkg->dependencies_nevra = json_string_array (p_obj, "dependencies_nevra");
+          pkg->transitive_deps = json_string_array (p_obj, "transitive_dependencies");
+          pkg->recommends = json_string_array (p_obj, "recommends");
+          pkg->supplements = json_string_array (p_obj, "supplements");
 
           /* A later layer overrides an earlier one's package with the same key */
           gchar *key = installed_key (pkg->name, pkg->arch, pkg->nevra, installonly);
@@ -327,8 +436,94 @@ select_one_pkg_for_nevra (DnfRepoLoader *repo_loader, GPtrArray *pkgs)
   return pkgs_to_use;
 }
 
+/* The candidates of the specs, one per name.arch. Repos of equal priority each
+ * contribute their newest package, so the same NEVRA can appear once per repo
+ * (or an older and a newer one); installing every one of them fails with
+ * "cannot install both X from repoA and X from repoB". Keep the highest EVR and,
+ * for equal EVRs, the repo that wins on priority and cost. */
+static GPtrArray *
+pick_one_pkg_per_name_arch (DnfRepoLoader *repo_loader, GPtrArray *pkgs)
+{
+  g_autoptr(GHashTable) best = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+  for (guint i = 0; i < pkgs->len; ++i)
+    {
+      DnfPackage *pkg = g_ptr_array_index (pkgs, i);
+      g_autofree gchar *key = g_strdup_printf ("%s.%s", dnf_package_get_name (pkg),
+                                               dnf_package_get_arch (pkg));
+      DnfPackage *cur = g_hash_table_lookup (best, key);
+      if (!cur)
+        {
+          g_hash_table_insert (best, g_steal_pointer (&key), pkg);
+          continue;
+        }
+      gint cmp = dnf_package_evr_cmp (pkg, cur);
+      if (cmp > 0 || (cmp == 0 && dnf_package_repo_prio_cost_cmp (pkg, cur, repo_loader) < 0))
+        g_hash_table_insert (best, g_steal_pointer (&key), pkg);
+    }
+
+  GPtrArray *out = g_ptr_array_new_with_free_func ((GDestroyNotify)g_object_unref);
+  for (guint i = 0; i < pkgs->len; ++i)
+    {
+      DnfPackage *pkg = g_ptr_array_index (pkgs, i);
+      g_autofree gchar *key = g_strdup_printf ("%s.%s", dnf_package_get_name (pkg),
+                                               dnf_package_get_arch (pkg));
+      if (g_hash_table_lookup (best, key) == pkg)
+        g_ptr_array_add (out, g_object_ref (pkg));
+    }
+  return out;
+}
+
+/* Records the weak-dependency edges of @pkg_name in @edges (name -> set of names):
+ * from the packages its @deps (Recommends) name to it, or with @reverse
+ * (Supplements) from them to it, limited to the packages of the solve. (libsolv
+ * does not pull a package in for a Supplements trigger a layer below installed,
+ * so such a trigger needs no edge.)
+ * Rich dependencies need no parsing: the provides query of a boolean dependency
+ * returns the providers of every operand ("(foo and bar)" matches foo and bar,
+ * "(a if b)" matches a), so an edge can be added that the solver would not
+ * follow, never one fewer. */
+static void
+collect_weak_edges (HyQuery dep_query, DnfReldepList *deps, GHashTable *id_to_pkg,
+                    const char *pkg_name, gboolean reverse, GHashTable *edges)
+{
+  if (!deps)
+    return;
+
+  int n_deps = dnf_reldep_list_count (deps);
+  for (int d = 0; d < n_deps; ++d)
+    {
+      DnfReldep *reldep = dnf_reldep_list_index (deps, d);
+      hy_query_filter_reldep (dep_query, HY_PKG_PROVIDES, reldep);
+      g_autoptr(GPtrArray) providers = hy_query_run (dep_query);
+      hy_query_clear (dep_query);
+      dnf_reldep_free (reldep);
+
+      for (guint p = 0; p < providers->len; ++p)
+        {
+          DnfPackage *prov = g_ptr_array_index (providers, p);
+          const char *prov_name = dnf_package_get_name (prov);
+          if (!prov_name || g_strcmp0 (prov_name, pkg_name) == 0 ||
+              !g_hash_table_contains (id_to_pkg, GUINT_TO_POINTER (dnf_package_get_id (prov))))
+            continue;
+
+          const char *from = reverse ? prov_name : pkg_name;
+          const char *to = reverse ? pkg_name : prov_name;
+          GHashTable *set = g_hash_table_lookup (edges, from);
+          if (!set)
+            {
+              set = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+              g_hash_table_insert (edges, g_strdup (from), set);
+            }
+          g_hash_table_add (set, g_strdup (to));
+        }
+    }
+  dnf_reldep_list_free (deps);
+}
+
+/* Candidates of the specs in @pkgs_spec: just the newest per arch with @latest,
+ * every version otherwise (for --nobest). */
 static HyQuery
-get_packages_query (DnfContext *ctx, GStrv pkgs_spec, const gchar *opt_archlist)
+get_packages_query (DnfContext *ctx, GStrv pkgs_spec, const gchar *opt_archlist, gboolean latest)
 {
   DnfSack *sack = dnf_context_get_sack (ctx);
   HyQuery query = hy_query_create (sack);
@@ -346,7 +541,8 @@ get_packages_query (DnfContext *ctx, GStrv pkgs_spec, const gchar *opt_archlist)
           if (out_nevra)
             hy_nevra_free (out_nevra);
           hy_query_filter (key_query, HY_PKG_REPONAME, HY_NEQ, HY_SYSTEM_REPO_NAME);
-          hy_query_filter_num (key_query, HY_PKG_LATEST_PER_ARCH_BY_PRIORITY, HY_EQ, 1);
+          if (latest)
+            hy_query_filter_num (key_query, HY_PKG_LATEST_PER_ARCH_BY_PRIORITY, HY_EQ, 1);
           hy_query_union (query, key_query);
         }
     }
@@ -447,19 +643,66 @@ resolve_package_url (DnfPackage *pkg, DnfContext *ctx)
   return g_strdup (loc);
 }
 
+/* Splits repeated "a,b c" option values into a NULL-terminated, de-duplicated list. */
+static GStrv
+split_option_values (GStrv values)
+{
+  g_autoptr(GPtrArray) out = g_ptr_array_new_with_free_func (g_free);
+  for (char **val = values; val && *val; ++val)
+    {
+      g_auto(GStrv) tokens = g_strsplit_set (*val, ", ", -1);
+      for (char **tok = tokens; *tok; ++tok)
+        {
+          g_strstrip (*tok);
+          if (**tok && !g_ptr_array_find_with_equal_func (out, *tok, g_str_equal, NULL))
+            g_ptr_array_add (out, g_strdup (*tok));
+        }
+    }
+  g_ptr_array_add (out, NULL);
+  return (GStrv)g_ptr_array_free (g_steal_pointer (&out), FALSE);
+}
+
+/* dnf's "best" is opt-in in libdnf (default False) but every EL dnf.conf sets
+ * best=True, and the lockfile has always pinned the newest candidate. Keep
+ * that unless --nobest was given or "best" was set explicitly (config file,
+ * --setopt=best=..., --best). */
+static gboolean
+lock_use_best (gboolean opt_best, gboolean opt_nobest)
+{
+  if (opt_nobest)
+    return FALSE;
+  if (opt_best)
+    return TRUE;
+  enum DnfConfPriority prio = DNF_CONF_EMPTY;
+  g_autofree gchar *val = dnf_conf_main_get_option ("best", &prio, NULL);
+  if (val && prio > DNF_CONF_DEFAULT)
+    return dnf_context_get_best ();
+  return TRUE;
+}
+
 gboolean
 run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GError **error)
 {
   g_autofree gchar *opt_output = NULL;
   g_autofree gchar *opt_archlist = NULL;
+  g_autofree gchar *opt_forcearch = NULL;
   g_auto(GStrv) opt_exclude = NULL;
+  g_auto(GStrv) opt_excludepkgs = NULL;
+  g_auto(GStrv) opt_module_enable = NULL;
   g_auto(GStrv) opt_lockfiles = NULL;
   g_auto(GStrv) opt_packages = NULL;
+  gboolean opt_best = FALSE;
+  gboolean opt_nobest = FALSE;
 
   const GOptionEntry entries[] = {
     { "output", 'o', 0, G_OPTION_ARG_STRING, &opt_output, "Output JSON lockfile path (defaults to stdout)", "FILE" },
     { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, "Limit query to packages of given architectures", "ARCH,..." },
+    { "forcearch", '\0', 0, G_OPTION_ARG_STRING, &opt_forcearch, "Solve for this architecture instead of the host's (default: first non-noarch --archlist entry)", "ARCH" },
     { "exclude", 'x', 0, G_OPTION_ARG_STRING_ARRAY, &opt_exclude, "Exclude package and its unneeded dependencies unless directly requested", "PKG,..." },
+    { "excludepkgs", '\0', 0, G_OPTION_ARG_STRING_ARRAY, &opt_excludepkgs, "Hide packages matching NEVRA globs from the solver, like dnf --exclude/excludepkgs=", "GLOB,..." },
+    { "module-enable", '\0', 0, G_OPTION_ARG_STRING_ARRAY, &opt_module_enable, "Enable module streams before resolving, like dnf module enable", "NAME:STREAM,..." },
+    { "best", '\0', 0, G_OPTION_ARG_NONE, &opt_best, "Require the best candidate for requested packages (default)", NULL },
+    { "nobest", '\0', 0, G_OPTION_ARG_NONE, &opt_nobest, "Fall back to older candidates when the best one is not installable", NULL },
     { "lockfile", 'l', 0, G_OPTION_ARG_FILENAME_ARRAY, &opt_lockfiles, "Ordered list of lockfiles from previous layers", "FILE" },
     { "lock-file", 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &opt_lockfiles, "Ordered list of lockfiles from previous layers", "FILE" },
     { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_packages, "Target packages", "PACKAGE..." },
@@ -469,6 +712,23 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   g_option_context_add_main_entries (opt_ctx, entries, NULL);
   if (!g_option_context_parse (opt_ctx, &argc, &argv, error))
     return FALSE;
+
+  if (opt_best && opt_nobest)
+    {
+      g_set_error_literal (error, G_OPTION_ERROR, G_OPTION_ERROR_BAD_VALUE,
+                           "Argument --nobest is not allowed with argument --best");
+      return FALSE;
+    }
+  const gboolean use_best = lock_use_best (opt_best, opt_nobest);
+
+  /* dnf excludepkgs: applied by libdnf while the repos are added to the sack */
+  g_auto(GStrv) excludepkgs = split_option_values (opt_excludepkgs);
+  if (excludepkgs[0])
+    {
+      g_autofree gchar *globs = g_strjoinv (",", excludepkgs);
+      if (!dnf_conf_main_set_option ("excludepkgs", DNF_CONF_COMMANDLINE, globs, error))
+        return FALSE;
+    }
 
   /* Collect ordered list of lockfile paths from options and remaining arguments */
   g_autoptr(GPtrArray) ordered_lockfiles = g_ptr_array_new_with_free_func (g_free);
@@ -543,6 +803,16 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   DnfSack *sack = dnf_context_get_sack (ctx);
   Pool *pool = dnf_sack_get_pool (sack);
 
+  g_auto(GStrv) module_specs = split_option_values (opt_module_enable);
+  if (module_specs[0])
+    {
+      if (!dnf_context_module_enable (ctx, (const char **)module_specs, error))
+        return FALSE;
+      /* libdnf enables the streams' module dependencies after filtering; refresh. */
+      if (!lock_recompute_modular_filtering (ctx, error))
+        return FALSE;
+    }
+
   /* Create and populate system repo representing packages installed in previous layers */
   if (installed_order->len > 0)
     {
@@ -570,8 +840,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
           if (cand_pkgs && cand_pkgs->len > 0)
             {
               DnfPackage *cand = g_ptr_array_index (cand_pkgs, 0);
-              g_autofree gchar *cand_integrity = compute_package_integrity (cand);
-              if (inst->integrity && cand_integrity && g_strcmp0 (inst->integrity, cand_integrity) != 0)
+              if (layer_integrity_differs (inst->integrity, cand))
                 {
                   /* RPM integrity changed! Do not mark as installed so solver fetches updated package */
                   continue;
@@ -624,6 +893,9 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
                       dp++;
                     }
                 }
+              /* dnf leaves out the providers of Recommends an installed package left unmet */
+              copy_deparray (sys_repo, new_id, s_cand, SOLVABLE_RECOMMENDS, s_cand->recommends);
+              copy_deparray (sys_repo, new_id, s_cand, SOLVABLE_SUPPLEMENTS, s_cand->supplements);
             }
           else
             {
@@ -638,6 +910,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
               Id self_dep = pool_rel2id (pool, s_new->name, s_new->evr, REL_EQ, 1);
               repo_add_deparray (sys_repo, new_id, SOLVABLE_PROVIDES, self_dep, 0);
               repo_add_deparray (sys_repo, new_id, SOLVABLE_PROVIDES, s_new->name, 0);
+              add_provides_of_name (pool, sys_repo, new_id, sack, inst, opt_archlist);
 
               if (inst->dependencies)
                 {
@@ -647,6 +920,10 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
                       repo_add_deparray (sys_repo, new_id, SOLVABLE_REQUIRES, pool_str2id (pool, dn, 1), 0);
                     }
                 }
+              /* Recorded by the lock that put the package in the layer: dnf leaves out the
+               * providers of Recommends an installed package left unmet. */
+              add_dep_strings (pool, sys_repo, new_id, SOLVABLE_RECOMMENDS, inst->recommends);
+              add_dep_strings (pool, sys_repo, new_id, SOLVABLE_SUPPLEMENTS, inst->supplements);
             }
         }
 
@@ -660,8 +937,10 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   for (guint i = 0; i < actual_target_pkgs->len; ++i)
     pkgs_spec_array[i] = g_strdup (g_ptr_array_index (actual_target_pkgs, i));
 
-  hy_autoquery HyQuery query = get_packages_query (ctx, pkgs_spec_array, opt_archlist);
-  g_autoptr(GPtrArray) target_pkgs = hy_query_run (query);
+  DnfRepoLoader *repo_loader = dnf_context_get_repo_loader (ctx);
+  hy_autoquery HyQuery query = get_packages_query (ctx, pkgs_spec_array, opt_archlist, TRUE);
+  g_autoptr(GPtrArray) candidate_pkgs = hy_query_run (query);
+  g_autoptr(GPtrArray) target_pkgs = pick_one_pkg_per_name_arch (repo_loader, candidate_pkgs);
 
   for (guint i = 0; i < target_pkgs->len; ++i)
     {
@@ -694,18 +973,75 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   g_autoptr(GPtrArray) all_pkgs = g_ptr_array_new_with_free_func ((GDestroyNotify)g_object_unref);
   g_autoptr(GPtrArray) obsoleted = NULL;
 
+  /* dnf's install_weak_deps (default True): the solver installs the Recommends
+   * of what it installs, and the Supplements that match */
+  const gboolean weak_deps = dnf_context_get_install_weak_deps ();
+
   if (target_pkgs->len > 0)
     {
       HyGoal goal = hy_goal_create (sack);
-      for (guint i = 0; i < target_pkgs->len; ++i)
+      if (use_best)
         {
-          hy_goal_install (goal, g_ptr_array_index (target_pkgs, i));
+          for (guint i = 0; i < target_pkgs->len; ++i)
+            {
+              DnfPackage *pkg = g_ptr_array_index (target_pkgs, i);
+              /* dnf leaves an installed package alone unless the repositories hold a newer
+               * build: an install job for an older or identical copy of it would count as a
+               * fresh install and pull in that copy's weak dependencies. */
+              InstalledPkg *inst = lookup_installed (installed_by_key, pkg, installonly);
+              if (inst && inst->version)
+                {
+                  int cmp = pool_evrcmp_str (pool, inst->version, dnf_package_get_evr (pkg), EVRCMP_COMPARE);
+                  if (cmp > 0 || (cmp == 0 && !layer_integrity_differs (inst->integrity, pkg)))
+                    continue;
+                }
+              hy_goal_install (goal, pkg);
+            }
+        }
+      else
+        {
+          /* --nobest: let the solver pick among all candidates of each request,
+           * preferring the newest. A pinned version or arch stays a constraint. */
+          for (guint i = 0; i < actual_target_pkgs->len; ++i)
+            {
+              char *spec_array[] = { g_ptr_array_index (actual_target_pkgs, i), NULL };
+              hy_autoquery HyQuery all_query = get_packages_query (ctx, spec_array, opt_archlist, FALSE);
+              DnfPackageSet *pset = hy_query_run_set (all_query);
+              gboolean ok = TRUE;
+              if (dnf_packageset_count (pset) > 0)
+                {
+                  HySelector sltr = hy_selector_create (sack);
+                  hy_selector_pkg_set (sltr, pset);
+                  ok = hy_goal_install_selector (goal, sltr, error);
+                  hy_selector_free (sltr);
+                }
+              dnf_packageset_free (pset);
+              if (!ok)
+                {
+                  hy_goal_free (goal);
+                  return FALSE;
+                }
+            }
         }
 
-      if (hy_goal_run_flags (goal, DNF_NONE) != 0)
+      int run_flags = DNF_NONE;
+      if (use_best)
+        run_flags |= DNF_FORCE_BEST;
+      if (!weak_deps)
+        run_flags |= DNF_IGNORE_WEAK_DEPS;
+
+      /* dnf_goal_depsolve, unlike hy_goal_run_flags, excludes from weak-dependency
+       * installation the providers of Recommends that the installed packages left
+       * unmet, so an upgrade only adds the weak dependencies that are new. */
+      g_autoptr(GError) depsolve_error = NULL;
+      /* Every target may already be in the layers below: an empty transaction is no failure. */
+      if (!dnf_goal_depsolve (goal, (DnfGoalActions)run_flags, &depsolve_error) &&
+          !g_error_matches (depsolve_error, DNF_ERROR, DNF_ERROR_NO_PACKAGES_TO_UPDATE))
         {
-          g_set_error_literal (error, DNF_ERROR, DNF_ERROR_NO_SOLUTION,
-                               "Error resolving package dependencies");
+          g_autofree gchar *problems = lock_goal_describe_problems (goal);
+          g_set_error (error, DNF_ERROR, DNF_ERROR_NO_SOLUTION,
+                       "Error resolving package dependencies%s%s",
+                       problems && *problems ? ":\n" : "", problems ? problems : "");
           hy_goal_free (goal);
           return FALSE;
         }
@@ -716,8 +1052,9 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
         g_printerr ("warning: the solve obsoletes %s from a layer below\n",
                     dnf_package_get_nevra (g_ptr_array_index (obsoleted, i)));
 
-      /* Include target packages in all_pkgs ONLY if new or integrity changed */
-      for (guint i = 0; i < target_pkgs->len; ++i)
+      /* Include target packages in all_pkgs ONLY if new or integrity changed.
+       * With --nobest the solver may pick another version; installs lists it. */
+      for (guint i = 0; use_best && i < target_pkgs->len; ++i)
         {
           DnfPackage *pkg = g_ptr_array_index (target_pkgs, i);
           InstalledPkg *inst = lookup_installed (installed_by_key, pkg, installonly);
@@ -725,12 +1062,8 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
             {
               g_ptr_array_add (all_pkgs, g_object_ref (pkg));
             }
-          else
-            {
-              g_autofree gchar *integrity = compute_package_integrity (pkg);
-              if (g_strcmp0 (integrity, inst->integrity) != 0)
-                g_ptr_array_add (all_pkgs, g_object_ref (pkg));
-            }
+          else if (layer_integrity_differs (inst->integrity, pkg))
+            g_ptr_array_add (all_pkgs, g_object_ref (pkg));
         }
 
       g_autoptr(GPtrArray) installs = hy_goal_list_installs (goal, NULL);
@@ -744,12 +1077,8 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
                 {
                   g_ptr_array_add (all_pkgs, g_object_ref (pkg));
                 }
-              else
-                {
-                  g_autofree gchar *integrity = compute_package_integrity (pkg);
-                  if (g_strcmp0 (integrity, inst->integrity) != 0)
-                    g_ptr_array_add (all_pkgs, g_object_ref (pkg));
-                }
+              else if (layer_integrity_differs (inst->integrity, pkg))
+                g_ptr_array_add (all_pkgs, g_object_ref (pkg));
             }
         }
 
@@ -766,7 +1095,6 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
       hy_goal_free (goal);
     }
 
-  DnfRepoLoader *repo_loader = dnf_context_get_repo_loader (ctx);
   g_autoptr(GPtrArray) resolved = select_one_pkg_for_nevra (repo_loader, all_pkgs);
   g_ptr_array_set_free_func (resolved, g_object_unref);
 
@@ -800,6 +1128,14 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
             }
         }
     }
+
+  /* Without --exclude every package the solver installs is kept, as dnf installs
+   * it. With it, what is only reachable through an excluded package is trimmed. */
+  const gboolean trim = g_hash_table_size (exclude_set) > 0;
+
+  /* Weak edges (Recommends, reverse Supplements), only followed to find what to
+   * trim; they stay out of "dependencies" as the package does not require them. */
+  g_autoptr(GHashTable) pkg_weak_deps = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, (GDestroyNotify)g_hash_table_unref);
 
   /* Discover direct dependencies of each resolved package */
   hy_autoquery HyQuery dep_query = hy_query_create (sack);
@@ -856,6 +1192,14 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
 
       g_hash_table_insert (pkg_direct_deps, g_strdup (pkg_name), dep_names);
       g_hash_table_insert (pkg_direct_nevras, g_strdup (pkg_name), dep_nevras);
+
+      if (trim && weak_deps)
+        {
+          collect_weak_edges (dep_query, dnf_package_get_recommends (pkg), id_to_pkg,
+                              pkg_name, FALSE, pkg_weak_deps);
+          collect_weak_edges (dep_query, dnf_package_get_supplements (pkg), id_to_pkg,
+                              pkg_name, TRUE, pkg_weak_deps);
+        }
     }
 
   /* Excluded packages: those in exclude_set UNLESS directly requested */
@@ -888,7 +1232,7 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
     }
 
   /* If directly requested packages are all already installed, keep new packages reachable */
-  if (!any_in_reachable)
+  if (!trim || !any_in_reachable)
     {
       for (guint i = 0; i < resolved->len; ++i)
         {
@@ -906,12 +1250,17 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
   while (!g_queue_is_empty (queue))
     {
       gchar *curr = g_queue_pop_head (queue);
-      GHashTable *curr_deps = g_hash_table_lookup (pkg_direct_deps, curr);
-      if (curr_deps)
+      GHashTable *edge_sets[] = {
+        g_hash_table_lookup (pkg_direct_deps, curr),
+        g_hash_table_lookup (pkg_weak_deps, curr),
+      };
+      for (guint e = 0; e < G_N_ELEMENTS (edge_sets); ++e)
         {
+          if (!edge_sets[e])
+            continue;
           GHashTableIter dep_it;
           gpointer dep_k;
-          g_hash_table_iter_init (&dep_it, curr_deps);
+          g_hash_table_iter_init (&dep_it, edge_sets[e]);
           while (g_hash_table_iter_next (&dep_it, &dep_k, NULL))
             {
               const char *dep_name = dep_k;
@@ -1028,6 +1377,11 @@ run_lock (int argc, char **argv, GOptionContext *opt_ctx, DnfContext *ctx, GErro
           g_list_free (nk);
         }
       json_object_object_add (pkg_obj, "dependencies_nevra", deps_nevra_arr);
+
+      /* Weak dependencies, so that a later lock on top of this one knows what the package left unmet */
+      Solvable *s_pkg = pool_id2solvable (pool, dnf_package_get_id (pkg));
+      add_dep_strings_to_json (pkg_obj, "recommends", pool, s_pkg, s_pkg->recommends);
+      add_dep_strings_to_json (pkg_obj, "supplements", pool, s_pkg, s_pkg->supplements);
 
       /* Compute flat transitive dependencies */
       g_autoptr(GHashTable) trans_set = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
