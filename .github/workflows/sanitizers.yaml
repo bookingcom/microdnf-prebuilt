@@ -1,0 +1,46 @@
+name: Sanitizers
+
+# ASan + LSan + UBSan over the dnf_lock e2e tests (bazel test --config=asan).
+# Separate from ci.yaml so it neither slows nor gates the main build.
+on:
+  push:
+    branches: [main, probe/asan-dnf-lock]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: sanitizers-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUILDBUDDY_ENDPOINT: ${{ vars.BUILDBUDDY_ENDPOINT || 'manuelfrancisconaranjo.buildbuddy.io' }}
+
+jobs:
+  sanitizers:
+    runs-on: ubuntu-latest
+    # Pull requests wait for maintainer approval exactly like ci.yaml (secrets are exposed).
+    environment: ${{ github.event_name == 'pull_request' && 'pr-secrets' || '' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@9f0750536d239de15c1f8528e2ba6c17a99fb752 # 0.19.1
+        with:
+          bazelisk-cache: true
+          disk-cache: false
+          repository-cache: false
+          output-base: ""
+
+      - name: Configure BuildBuddy Remote Cluster
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+        run: .github/workflows/setup_buildbuddy.sh
+
+      - name: dnf_lock e2e under ASan + LSan + UBSan
+        run: >-
+          bazel test --config=ci --config=asan
+          //e2e:lock_direct_test //e2e:lock_layers_test //e2e:lock_features_test //e2e:oracle_linux_curl_mark_test //e2e:test_tools_test

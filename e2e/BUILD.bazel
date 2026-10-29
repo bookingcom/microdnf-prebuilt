@@ -1,9 +1,15 @@
 load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_test", "default_test_runner")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//microdnf:defs.bzl", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
+load("//microdnf:defs.bzl", "dnf_config", "rpm_archive", "rpm_extract", "rpm_lock", "rpm_mark")
 load("//microdnf/private:package.bzl", "rpm_package")
 
 package(default_visibility = ["//visibility:public"])
+
+# UBSan suppression file, present in the runfiles only under --config=asan.
+_SANITIZER_DATA = select({
+    "//sanitizers:enabled": ["//sanitizers:suppressions"],
+    "//conditions:default": [],
+})
 
 # Direct execution test for built tools
 sh_test(
@@ -15,14 +21,63 @@ sh_test(
         "$(location //:dnf_lock)",
         "$(location //:rpm2files)",
         "$(location //:mark)",
+        "$(location //:dnf5)",
     ],
     data = [
+        "//:dnf5",
         "//:dnf_lock",
         "//:mark",
         "//:microdnf",
         "//:rpm2archive",
         "//:rpm2files",
+    ] + _SANITIZER_DATA,
+)
+
+# dnf5 smoke: repo load, repoquery and a solver run against the Oracle Linux 9 test repository
+sh_test(
+    name = "dnf5_smoke_test",
+    srcs = ["test_dnf5.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "e2e/testdata/ol9_repo",
+        "e2e/testdata/repo/tour-4-6.noarch.rpm",
     ],
+    data = [
+        "//:dnf5",
+        "//e2e/testdata:ol9_repo_files",
+        "//e2e/testdata:test_repo_files",
+    ] + _SANITIZER_DATA,
+)
+
+# dnf_config renders dnf.conf and the .repo file; the preamble makes dnf5 read only those.
+dnf_config(
+    name = "ol9_dnf_config",
+    excludepkgs = ["mystery-devel"],
+    install_weak_deps = False,
+    module_platform_id = "platform:el9",
+    releasever = "9",
+    repo_configs = ["//e2e/testdata:ol9_repo/ol9.repo"],
+    repo_files = ["//e2e/testdata:ol9_repo_files"],
+)
+
+filegroup(
+    name = "dnf5_test_lib",
+    srcs = ["dnf5_lib.sh"],
+)
+
+sh_test(
+    name = "dnf5_config_smoke_test",
+    srcs = ["test_dnf5_config.sh"],
+    args = [
+        "$(location //:dnf5)",
+        "$(rootpath :ol9_dnf_config)",
+        "e2e/testdata/ol9_repo",
+    ],
+    data = [
+        ":dnf5_test_lib",
+        ":ol9_dnf_config",
+        "//:dnf5",
+    ] + _SANITIZER_DATA,
 )
 
 # Step 2 test: Lockfile generation with RPM exclusion
@@ -125,6 +180,114 @@ sh_test(
         ":layer2_already_installed.lock.json",
         ":layer2_both.lock.json",
         ":layer2_incremental.lock.json",
+    ],
+)
+
+# dnf_lock options: --excludepkgs, --module-enable, --best/--nobest, --forcearch, duplicate repos, weak deps
+sh_test(
+    name = "lock_features_test",
+    srcs = ["test_lock_features.sh"],
+    args = [
+        "$(location //:dnf_lock)",
+        "$(location //e2e/testdata:features-repo/repodata/repomd.xml)",
+    ],
+    data = [
+        "//:dnf_lock",
+        "//e2e/testdata:features-repo/repodata/repomd.xml",
+        "//e2e/testdata:features_repo_files",
+    ] + _SANITIZER_DATA,
+    # One section per shard (see SECTIONS in the script).
+    shard_count = 6,
+)
+
+# The same options through the rpm_lock attributes
+rpm_lock(
+    name = "attrs_excludepkgs_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    excludepkgs = ["ca-certificates-2026.2.92_v9.0.319-*"],
+    packages = ["certuser"],
+    out = "attrs_excludepkgs.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+rpm_lock(
+    name = "attrs_nobest_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    nobest = True,
+    packages = ["bestapp"],
+    out = "attrs_nobest.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+rpm_lock(
+    name = "attrs_noweak_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    install_weak_deps = False,
+    packages = ["weakapp"],
+    out = "attrs_noweak.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+rpm_lock(
+    name = "attrs_module_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    module_enable = ["mysql:8.4"],
+    module_platform_id = "platform:el9",
+    packages = ["mysql"],
+    out = "attrs_module.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+rpm_lock(
+    name = "attrs_forcearch_lock",
+    arch = [
+        "x86_64",
+        "noarch",
+    ],
+    forcearch = "x86_64",
+    packages = ["expat"],
+    out = "attrs_forcearch.lock.json",
+    releasever = "9",
+    repo_config = "//e2e/testdata:features.repo",
+    repo_files = ["//e2e/testdata:features_repo_files"],
+)
+
+sh_test(
+    name = "lock_attrs_test",
+    srcs = ["test_lock_attrs.sh"],
+    args = [
+        "$(location :attrs_excludepkgs.lock.json)",
+        "$(location :attrs_nobest.lock.json)",
+        "$(location :attrs_module.lock.json)",
+        "$(location :attrs_forcearch.lock.json)",
+        "$(location :attrs_noweak.lock.json)",
+    ],
+    data = [
+        ":attrs_excludepkgs.lock.json",
+        ":attrs_forcearch.lock.json",
+        ":attrs_module.lock.json",
+        ":attrs_nobest.lock.json",
+        ":attrs_noweak.lock.json",
     ],
 )
 
@@ -317,7 +480,7 @@ sh_test(
         "//e2e/testdata:repo/repodata/repomd.xml",
         "//e2e/testdata:test.repo",
         "//e2e/testdata:test_repo_files",
-    ],
+    ] + _SANITIZER_DATA,
 )
 
 sh_test(
@@ -330,7 +493,7 @@ sh_test(
     data = [
         ":test_lock_layers.py",
         "//:dnf_lock",
-    ],
+    ] + _SANITIZER_DATA,
 )
 
 # Step 7 test: Oracle Linux 9 curl binary extraction and rpmdb mark
@@ -388,5 +551,5 @@ sh_test(
         "//:mark",
         "//e2e/testdata:ol9_repo/ol9.repo",
         "//e2e/testdata:ol9_repo_files",
-    ],
+    ] + _SANITIZER_DATA,
 )

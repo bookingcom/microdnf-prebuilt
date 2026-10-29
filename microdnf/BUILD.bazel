@@ -62,6 +62,12 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "dnf5",
+    actual = "//dnf:dnf5",
+    visibility = ["//visibility:public"],
+)
+
 # Host toolchain implementation selects the prebuilt binary matching host platform
 microdnf_toolchain(
     name = "toolchain_impl_host",

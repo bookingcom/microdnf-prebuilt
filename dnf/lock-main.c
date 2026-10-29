@@ -4,6 +4,7 @@
  */
 
 #include "lock.h"
+#include "solve-arch.h"
 #include <stdio.h>
 #include <locale.h>
 #include <unistd.h>
@@ -72,8 +73,14 @@ process_global_option (const gchar  *option_name,
               g_auto(GStrv) varsdir = g_strsplit (setopt[1], ",", -1);
               dnf_context_set_vars_dir (ctx, (const gchar * const *)varsdir);
             }
-          else if (strchr (setopt[0], '.'))
+          else if (strcmp (setopt[0], "module_platform_id") == 0)
             {
+              dnf_context_set_platform_module (ctx, setopt[1]);
+            }
+          else
+            {
+              /* Main options (excludepkgs, best, ...) and repo_id.option_name
+               * options, applied when libdnf loads its config. */
               dnf_conf_add_setopt (setopt[0], DNF_CONF_COMMANDLINE, setopt[1], NULL);
             }
         }
@@ -144,7 +151,9 @@ main (int argc, char *argv[])
     { "refresh", '\0', 0, G_OPTION_ARG_NONE, &opt_refresh, "Set metadata as expired", NULL },
     { "releasever", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override $releasever", "RELEASEVER" },
     { "reposdir", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override repository configuration directory", "PATH" },
-    { "setopt", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override configuration option", "<opt>=<val>" },
+    { "setopt", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option,
+      "Override a configuration option (excludepkgs=<glob>,..., best=<bool>, module_platform_id=<name:stream>, "
+      "cachedir=<path>, reposdir=<path>,..., varsdir=<path>,..., repo_id.option_name=<value>)", "<opt>=<val>" },
     { NULL }
   };
 
@@ -165,7 +174,12 @@ main (int argc, char *argv[])
           const GOptionEntry entries[] = {
             { "output", 'o', 0, G_OPTION_ARG_NONE, NULL, "Output JSON lockfile path (defaults to stdout)", "FILE" },
             { "archlist", '\0', 0, G_OPTION_ARG_NONE, NULL, "Limit query to packages of given architectures", "ARCH,..." },
+            { "forcearch", '\0', 0, G_OPTION_ARG_NONE, NULL, "Solve for this architecture instead of the host's (default: first non-noarch --archlist entry)", "ARCH" },
             { "exclude", 'x', 0, G_OPTION_ARG_NONE, NULL, "Exclude package and its dependencies unless directly requested", "PKG,..." },
+            { "excludepkgs", '\0', 0, G_OPTION_ARG_NONE, NULL, "Hide packages matching NEVRA globs from the solver, like dnf --exclude/excludepkgs=", "GLOB,..." },
+            { "module-enable", '\0', 0, G_OPTION_ARG_NONE, NULL, "Enable module streams before resolving, like dnf module enable", "NAME:STREAM,..." },
+            { "best", '\0', 0, G_OPTION_ARG_NONE, NULL, "Require the best candidate for requested packages (default)", NULL },
+            { "nobest", '\0', 0, G_OPTION_ARG_NONE, NULL, "Fall back to older candidates when the best one is not installable", NULL },
             { "lockfile", 'l', 0, G_OPTION_ARG_NONE, NULL, "Ordered list of lockfiles from previous layers", "FILE" },
             { "lock-file", 0, 0, G_OPTION_ARG_NONE, NULL, "Ordered list of lockfiles from previous layers", "FILE" },
             { NULL }
@@ -193,6 +207,17 @@ main (int argc, char *argv[])
 
   if (opt_refresh)
     dnf_context_set_cache_age (ctx, 0);
+
+  /* Solve for the target architecture, not the host's: otherwise libsolv
+   * rejects e.g. x86_64 packages on an arm64 host, and $basearch in repo URLs
+   * would keep the host value. libdnf reads DNF_VAR_<name> as a repo variable
+   * that overrides the built-in one. */
+  g_autofree gchar *solve_arch = find_solve_arch (argc, argv);
+  if (solve_arch)
+    {
+      dnf_context_set_arch (ctx, solve_arch);
+      setenv ("DNF_VAR_basearch", basearch_for_arch (solve_arch), 1);
+    }
 
   if (!dnf_context_setup (ctx, NULL, &error))
     {
