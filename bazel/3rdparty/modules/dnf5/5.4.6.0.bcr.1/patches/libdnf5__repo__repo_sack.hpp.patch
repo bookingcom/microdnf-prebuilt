@@ -1,0 +1,19 @@
+--- a/include/libdnf5/repo/repo_sack.hpp
++++ b/include/libdnf5/repo/repo_sack.hpp
+@@ -95,6 +95,16 @@
+     /// @return The system repository.
+     libdnf5::repo::RepoWeakPtr get_system_repo();
+ 
++    /// Fills the system repository with the packages of a libsolv testcase file, as if they were installed. Used to
++    /// solve on top of a set of packages that has no rpmdb. Do not load the system repo from the rpmdb as well.
++    /// @param path The path to the libsolv testcase file
++    /// @return The system repository.
++    libdnf5::repo::RepoWeakPtr create_system_repo_from_libsolv_testcase(const std::string & path);
++
++    /// Recomputes the modular filtering of the package sack. Call it after enabling or resetting module streams on
++    /// an already loaded sack, so that later package queries see the new module state.
++    void reapply_module_filtering();
++
+     /// Add given paths to comdline repository.
+     /// @param paths Vector of paths to rpm files to be inserted to cmdline repo. Can contain paths to local files or URLs of remote rpm files. Specifications that are neither file paths, nor URLs are ignored.
+     /// @param calculate_checksum Whether libsolv should calculate and store checksum of added packages. Setting to true significantly reduces performance.
