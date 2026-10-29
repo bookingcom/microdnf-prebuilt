@@ -6,6 +6,7 @@ RPM2ARCHIVE="$2"
 DNF_LOCK="$3"
 RPM2FILES="$4"
 MARK="$5"
+DNF5="$6"
 
 echo "Testing microdnf execution..."
 "${MICRODNF}" --help
@@ -21,5 +22,8 @@ echo "Testing rpm2files execution..."
 
 echo "Testing mark execution..."
 "${MARK}" --help
+
+echo "Testing dnf5 execution..."
+"${DNF5}" --help
 
 echo "All tools executed successfully!"
