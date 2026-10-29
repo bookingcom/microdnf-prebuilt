@@ -1,0 +1,16 @@
+--- a/libdnf5/repo/repo_sack.cpp
++++ b/libdnf5/repo/repo_sack.cpp
+@@ -328,6 +328,13 @@
+     return p_impl->system_repo->get_weak_ptr();
+ }
+ 
++RepoWeakPtr RepoSack::create_system_repo_from_libsolv_testcase(const std::string & path) {
++    auto repo = get_system_repo();
++    repo->add_libsolv_testcase(path);
++    p_impl->base->get_rpm_package_sack()->load_config_excludes_includes();
++    return repo;
++}
++
+ bool RepoSack::Impl::handle_repo_exception(const Repo * repo, std::exception_ptr ep, bool report_key_err) {
+     // Use an exception_ptr to preserve the original type of the exception, in case we re-throw it.
+     std::exception exception;

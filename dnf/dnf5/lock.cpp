@@ -1,0 +1,417 @@
+#include "lock.hpp"
+
+#include "arguments.hpp"
+
+#include <glib.h>
+#include <json-c/json.h>
+#include <libdnf5-cli/argument_parser.hpp>
+#include <libdnf5-cli/exception.hpp>
+#include <libdnf5/base/goal.hpp>
+#include <libdnf5/base/transaction.hpp>
+#include <libdnf5/base/transaction_package.hpp>
+#include <libdnf5/rpm/nevra.hpp>
+#include <libdnf5/rpm/package_query.hpp>
+#include <libdnf5/rpm/package_set.hpp>
+#include <libdnf5/utils/bgettext/bgettext-lib.h>
+#include <libdnf5/utils/bgettext/bgettext-mark-domain.h>
+
+#include <algorithm>
+#include <climits>
+#include <cstdio>
+#include <deque>
+#include <map>
+#include <set>
+
+namespace dnf5 {
+
+using libdnf5::cli::ArgumentParser;
+using libdnf5::rpm::Package;
+using libdnf5::rpm::PackageQuery;
+using libdnf5::rpm::PackageSet;
+
+namespace {
+
+using NameSet = std::set<std::string>;
+
+std::string name_arch(const Package & pkg) {
+    return pkg.get_name() + "." + pkg.get_arch();
+}
+
+// Negative when `a` is the better build of one NEVRA: higher repo priority (a lower number), then lower cost.
+int repo_prio_cost_cmp(const Package & a, const Package & b) {
+    const auto * ra = a.get_repo().get();
+    const auto * rb = b.get_repo().get();
+    int result = (rb ? rb->get_priority() : 0) - (ra ? ra->get_priority() : 0);
+    if (result == 0) {
+        result = (ra ? ra->get_cost() : INT_MAX) - (rb ? rb->get_cost() : INT_MAX);
+    }
+    return result;
+}
+
+// Repos of equal priority each contribute their newest package, so a name.arch can appear once per repo, and installing
+// every one of them fails with "cannot install both". Keep the highest EVR and, for equal EVRs, the repo that wins on
+// priority and cost.
+std::vector<Package> pick_one_per_name_arch(const std::vector<Package> & pkgs) {
+    std::map<std::string, const Package *> best;
+    for (const auto & pkg : pkgs) {
+        auto [it, inserted] = best.emplace(name_arch(pkg), &pkg);
+        if (inserted) {
+            continue;
+        }
+        int cmp = libdnf5::rpm::evrcmp(pkg, *it->second);
+        if (cmp > 0 || (cmp == 0 && repo_prio_cost_cmp(pkg, *it->second) < 0)) {
+            it->second = &pkg;
+        }
+    }
+    std::vector<Package> out;
+    for (const auto & pkg : pkgs) {
+        if (best.at(name_arch(pkg)) == &pkg) {
+            out.push_back(pkg);
+        }
+    }
+    return out;
+}
+
+// One package per NEVRA, in the iteration order of a GLib hash table keyed by NEVRA. That is the order of the
+// lockfile's "packages", and the order dnf_lock produces.
+std::vector<Package> one_per_nevra(const std::vector<Package> & pkgs) {
+    std::deque<std::string> nevras;
+    GHashTable * by_nevra = g_hash_table_new(g_str_hash, g_str_equal);
+    for (const auto & pkg : pkgs) {
+        nevras.push_back(pkg.get_nevra());
+        auto * key = const_cast<char *>(nevras.back().c_str());
+        auto * list = static_cast<GSList *>(g_hash_table_lookup(by_nevra, key));
+        g_hash_table_insert(by_nevra, key, g_slist_prepend(list, const_cast<Package *>(&pkg)));
+    }
+    std::vector<Package> out;
+    GHashTableIter iter;
+    gpointer value;
+    g_hash_table_iter_init(&iter, by_nevra);
+    while (g_hash_table_iter_next(&iter, nullptr, &value)) {
+        auto * sorted = g_slist_sort_with_data(
+            static_cast<GSList *>(value),
+            [](gconstpointer a, gconstpointer b, gpointer) {
+                return repo_prio_cost_cmp(*static_cast<const Package *>(a), *static_cast<const Package *>(b));
+            },
+            nullptr);
+        out.push_back(*static_cast<const Package *>(sorted->data));
+        g_slist_free(sorted);
+    }
+    g_hash_table_destroy(by_nevra);
+    return out;
+}
+
+// The package's checksum as the lockfile's "integrity" (algorithm-base64) and, in `hex`, its "checksum".
+std::string integrity_of(const Package & pkg, std::string & hex) {
+    auto checksum = pkg.get_checksum();
+    hex = checksum.get_checksum();
+    if (hex.empty()) {
+        return "";
+    }
+    std::string raw;
+    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+        raw.push_back(static_cast<char>(std::stoi(hex.substr(i, 2), nullptr, 16)));
+    }
+    gchar * b64 = g_base64_encode(reinterpret_cast<const guchar *>(raw.data()), raw.size());
+    std::string integrity = checksum.get_type_str() + "-" + b64;
+    g_free(b64);
+    return integrity;
+}
+
+// `base` and `rel` with exactly one slash between them.
+std::string join_url(const std::string & base, const std::string & rel) {
+    const bool base_slash = base.ends_with('/');
+    const bool rel_slash = rel.starts_with('/');
+    if (base_slash && rel_slash) {
+        return base + rel.substr(1);
+    }
+    return base_slash || rel_slash ? base + rel : base + "/" + rel;
+}
+
+// Where the package is downloaded from: its location when that is a URL already, else the location under the package's
+// base URL (xml:base), which is itself relative to the repo's first URL unless it is absolute.
+std::string package_url(const Package & pkg) {
+    auto location = pkg.get_location();
+    if (location.empty() || location.find("://") != std::string::npos) {
+        return location;
+    }
+    auto pkg_base = pkg.get_baseurl();
+    std::string repo_base;
+    if (auto * repo = pkg.get_repo().get()) {
+        auto urls = repo->get_config().get_baseurl_option().get_value();
+        if (!urls.empty()) {
+            repo_base = urls.front();
+        } else if (auto mirrors = repo->get_mirrors(); !mirrors.empty()) {
+            repo_base = mirrors.front();
+        }
+    }
+    const bool pkg_base_absolute = pkg_base.find("://") != std::string::npos;
+    std::string base;
+    if (pkg_base_absolute || repo_base.empty()) {
+        base = pkg_base;
+    } else {
+        base = pkg_base.empty() ? repo_base : join_url(repo_base, pkg_base);
+    }
+    return base.empty() ? location : join_url(base, location);
+}
+
+struct Providers {
+    NameSet names;
+    NameSet nevras;
+};
+
+// The packages that provide any of `deps`, other than `self`, when they are part of the lock (`locked`, by id) or of a
+// layer below (`installed`, by name).
+Providers providers_of(
+    libdnf5::Base & base,
+    const libdnf5::rpm::ReldepList & deps,
+    const std::string & self,
+    const std::set<libdnf5::rpm::PackageId> & locked,
+    const std::map<std::string, std::string> & installed) {
+    Providers result;
+    PackageQuery query(base);
+    query.filter_provides(deps);
+    for (const auto & prov : query) {
+        auto name = prov.get_name();
+        if ((!locked.count(prov.get_id()) && !installed.count(name)) || name == self) {
+            continue;
+        }
+        result.names.insert(name);
+        result.nevras.insert(prov.get_nevra());
+    }
+    return result;
+}
+
+json_object * json_strings(const NameSet & items) {
+    json_object * array = json_object_new_array();
+    for (const auto & item : items) {
+        json_object_array_add(array, json_object_new_string(item.c_str()));
+    }
+    return array;
+}
+
+// The dependency strings of `deps`, as pool_dep2str writes them; nothing when there are none.
+void add_dep_strings(json_object * pkg_obj, const char * key, const libdnf5::rpm::ReldepList & deps) {
+    if (deps.size() == 0) {
+        return;
+    }
+    json_object * array = json_object_new_array();
+    for (int i = 0; i < deps.size(); ++i) {
+        json_object_array_add(array, json_object_new_string(deps.get(i).to_string().c_str()));
+    }
+    json_object_object_add(pkg_obj, key, array);
+}
+
+}  // namespace
+
+void LockCommand::set_parent_command() {
+    auto * arg_parser_parent_cmd = get_session().get_argument_parser().get_root_command();
+    auto * arg_parser_this_cmd = get_argument_parser_command();
+    arg_parser_parent_cmd->register_command(arg_parser_this_cmd);
+}
+
+void LockCommand::set_argument_parser() {
+    auto & parser = get_context().get_argument_parser();
+    auto & cmd = *get_argument_parser_command();
+    cmd.set_description(_("Resolve packages and their dependencies into a JSON lockfile"));
+
+    auto specs_arg = parser.add_new_positional_arg("package-spec", ArgumentParser::PositionalArg::UNLIMITED, nullptr, nullptr);
+    specs_arg->set_description(_("Packages to lock"));
+    specs_arg->set_parse_hook_func([this]([[maybe_unused]] ArgumentParser::PositionalArg * arg, int argc, const char * const argv[]) {
+        for (int i = 0; i < argc; ++i) {
+            specs.emplace_back(argv[i]);
+        }
+        return true;
+    });
+    cmd.register_positional_arg(specs_arg);
+
+    add_value_option(parser, cmd, "output", 'o', "FILE", _("Write the lockfile to FILE instead of standard output"), [this](const char * v) { output = v; });
+    add_value_option(parser, cmd, "archlist", 0, "ARCH,...", _("Architectures a locked package may have"), [this](const char * v) { append_list(archlist, v); });
+    add_value_option(parser, cmd, "prune", 0, "PACKAGE,...", _("Leave PACKAGE and what only it pulls in weakly out of the lockfile"), [this](const char * v) { append_list(prune, v); });
+    add_value_option(parser, cmd, "module-enable", 0, "NAME:STREAM,...", _("Enable these module streams before resolving"), [this](const char * v) { append_list(module_enable, v); });
+    add_value_option(parser, cmd, "lockfile", 'l', "FILE,...", _("Lockfiles of the layers below this one, in order"), [this](const char * v) { append_list(lockfiles, v); });
+}
+
+void LockCommand::configure() {
+    // The installed set comes from the lockfiles of the layers below, not from an rpmdb.
+    get_context().set_load_system_repo(false);
+    get_context().set_load_available_repos(Context::LoadAvailableRepos::ENABLED);
+}
+
+void LockCommand::load_additional_packages() {}
+
+void LockCommand::run() {
+    if (specs.empty()) {
+        throw libdnf5::cli::CommandExitError(1, M_("No packages specified for lockfile generation"));
+    }
+    auto & base = get_context().get_base();
+    const bool best = base.get_config().get_best_option().get_value();
+
+    libdnf5::ResolveSpecSettings spec_settings;
+    spec_settings.set_with_nevra(true);
+    spec_settings.set_with_provides(true);
+    spec_settings.set_with_filenames(true);
+    spec_settings.set_with_binaries(false);
+    spec_settings.set_expand_globs(true);
+    spec_settings.set_ignore_case(false);
+
+    // The candidates of a spec: the newest per name.arch with best, every version otherwise (for --no-best).
+    auto candidates_of = [&](const std::string & spec, bool latest) {
+        PackageQuery query(base);
+        query.resolve_pkg_spec(spec, spec_settings, false);
+        query.filter_available();
+        if (latest) {
+            query.filter_priority();
+            query.filter_latest_evr();
+        }
+        if (!archlist.empty()) {
+            query.filter_arch(archlist);
+        }
+        return query;
+    };
+
+    std::vector<Package> candidates;
+    for (const auto & spec : specs) {
+        for (const auto & pkg : candidates_of(spec, best)) {
+            candidates.push_back(pkg);
+        }
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Package & a, const Package & b) { return a.get_id() < b.get_id(); });
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    auto targets = pick_one_per_name_arch(candidates);
+
+    NameSet directly_requested(specs.begin(), specs.end());
+    for (const auto & pkg : targets) {
+        directly_requested.insert(pkg.get_name());
+    }
+
+    // What the layers below hold: name -> NEVRA.
+    std::map<std::string, std::string> installed;
+
+    if (targets.empty()) {
+        throw libdnf5::cli::CommandExitError(1, M_("No packages matched the specified criteria"));
+    }
+
+    std::vector<Package> all_pkgs;
+    {
+        libdnf5::Goal goal(base);
+        if (best) {
+            for (const auto & pkg : targets) {
+                goal.add_rpm_install(pkg);
+            }
+        } else {
+            // Let the solver pick among all candidates of each request, preferring the newest.
+            for (const auto & spec : specs) {
+                PackageSet all(base);
+                for (const auto & pkg : candidates_of(spec, false)) {
+                    all.add(pkg);
+                }
+                if (!all.empty()) {
+                    goal.add_rpm_install(all);
+                }
+            }
+        }
+        auto transaction = goal.resolve();
+        if (transaction.get_problems() != libdnf5::GoalProblem::NO_PROBLEM) {
+            std::string message = "Error resolving package dependencies:";
+            for (const auto & problem : transaction.get_resolve_logs_as_strings()) {
+                message += "\n" + problem;
+            }
+            throw libdnf5::cli::CommandExitError(1, M_("{}"), message);
+        }
+        for (const auto & tp : transaction.get_transaction_packages()) {
+            using Action = libdnf5::transaction::TransactionItemAction;
+            if (tp.get_action() == Action::INSTALL || tp.get_action() == Action::UPGRADE) {
+                all_pkgs.push_back(tp.get_package());
+            }
+        }
+    }
+
+    auto resolved = one_per_nevra(all_pkgs);
+    std::set<libdnf5::rpm::PackageId> locked;
+    NameSet locked_names;
+    for (const auto & pkg : resolved) {
+        locked.insert(pkg.get_id());
+        locked_names.insert(pkg.get_name());
+    }
+
+    std::map<std::string, Providers> direct;
+    for (const auto & pkg : resolved) {
+        auto name = pkg.get_name();
+        direct[name] = providers_of(base, pkg.get_requires(), name, locked, installed);
+    }
+    const NameSet & reachable = locked_names;
+
+    json_object * root = json_object_new_object();
+    json_object_object_add(root, "version", json_object_new_int(1));
+    if (!archlist.empty()) {
+        std::string joined;
+        for (const auto & arch : archlist) {
+            joined += (joined.empty() ? "" : ",") + arch;
+        }
+        json_object_object_add(root, "arch", json_object_new_string(joined.c_str()));
+    }
+    json_object_object_add(root, "requested", json_strings(directly_requested));
+
+    json_object * packages = json_object_new_array();
+    for (const auto & pkg : resolved) {
+        auto name = pkg.get_name();
+        if (!reachable.count(name)) {
+            continue;
+        }
+        std::string hex;
+        auto integrity = integrity_of(pkg, hex);
+        json_object * obj = json_object_new_object();
+        json_object_object_add(obj, "name", json_object_new_string(name.c_str()));
+        json_object_object_add(obj, "version", json_object_new_string(pkg.get_evr().c_str()));
+        json_object_object_add(obj, "arch", json_object_new_string(pkg.get_arch().c_str()));
+        json_object_object_add(obj, "nevra", json_object_new_string(pkg.get_nevra().c_str()));
+        json_object_object_add(obj, "url", json_object_new_string(package_url(pkg).c_str()));
+        json_object_object_add(obj, "integrity", json_object_new_string(integrity.c_str()));
+        if (!hex.empty()) {
+            json_object_object_add(obj, "checksum", json_object_new_string(hex.c_str()));
+        }
+        json_object_object_add(obj, "requested", json_object_new_boolean(directly_requested.count(name)));
+
+        auto kept = [&](const std::string & dep) { return reachable.count(dep) || installed.count(dep); };
+        NameSet deps;
+        for (const auto & dep : direct[name].names) {
+            if (kept(dep)) {
+                deps.insert(dep);
+            }
+        }
+        json_object_object_add(obj, "dependencies", json_strings(deps));
+        json_object_object_add(obj, "dependencies_nevra", json_strings(direct[name].nevras));
+        // So that a later lock on top of this one knows what the package left unmet.
+        add_dep_strings(obj, "recommends", pkg.get_recommends());
+        add_dep_strings(obj, "supplements", pkg.get_supplements());
+
+        NameSet transitive;
+        std::deque<std::string> walk{name};
+        while (!walk.empty()) {
+            auto current = walk.front();
+            walk.pop_front();
+            for (const auto & dep : direct[current].names) {
+                if (dep != name && kept(dep) && transitive.insert(dep).second) {
+                    walk.push_back(dep);
+                }
+            }
+        }
+        json_object_object_add(obj, "transitive_dependencies", json_strings(transitive));
+        json_object_array_add(packages, obj);
+    }
+    json_object_object_add(root, "packages", packages);
+
+    std::string document = std::string(json_object_to_json_string_ext(root, JSON_C_TO_STRING_PRETTY)) + "\n";
+    json_object_put(root);
+    if (output.empty() || output == "-") {
+        std::fwrite(document.data(), 1, document.size(), stdout);
+        return;
+    }
+    std::FILE * file = std::fopen(output.c_str(), "wb");
+    if (!file || std::fwrite(document.data(), 1, document.size(), file) != document.size() || std::fclose(file) != 0) {
+        throw libdnf5::cli::CommandExitError(1, M_("Cannot write {}"), output);
+    }
+}
+
+}  // namespace dnf5
