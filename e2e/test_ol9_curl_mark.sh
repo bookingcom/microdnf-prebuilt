@@ -19,7 +19,7 @@ if [ ! -x "${CURL_BIN}" ]; then
 fi
 
 # Verify ELF header
-if ! file "${CURL_BIN}" | grep -q "ELF 64-bit"; then
+if ! file -L "${CURL_BIN}" | grep -q "ELF 64-bit"; then
   echo "Error: ${CURL_BIN} is not an ELF 64-bit binary"
   exit 1
 fi
