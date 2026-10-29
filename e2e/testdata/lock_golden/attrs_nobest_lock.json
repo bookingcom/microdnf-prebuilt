@@ -1,0 +1,22 @@
+{
+  "version":1,
+  "arch":"x86_64,noarch",
+  "requested":[
+    "bestapp"
+  ],
+  "packages":[
+    {
+      "name":"bestapp",
+      "version":"1.0-1",
+      "arch":"noarch",
+      "nevra":"bestapp-1.0-1.noarch",
+      "url":"file:@EXECROOT@\/_main\/bazel-out\/@CONFIG@\/bin\/e2e\/testdata\/features-repo\/features\/bestapp-1.0-1.noarch.rpm",
+      "integrity":"sha256-VtFJ09zw+Q64bjXAJAIn+3z1xtoH7zaDGhIxPqgNjZk=",
+      "checksum":"56d149d3dcf0f90eb86e35c0240227fb7cf5c6da07ef36831a12313ea80d8d99",
+      "requested":true,
+      "dependencies":[],
+      "dependencies_nevra":[],
+      "transitive_dependencies":[]
+    }
+  ]
+}

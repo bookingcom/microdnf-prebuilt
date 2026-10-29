@@ -1,0 +1,4 @@
+# LSan suppressions: third-party leaks only.
+# libdnf: DnfContext finalize never frees release_ver_major/minor set by
+# dnf_context_set_release_ver (3 bytes per --releasever). Upstream bug, harmless.
+leak:dnf_split_releasever
