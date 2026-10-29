@@ -1,0 +1,7 @@
+module(
+    name = "toml11",
+    version = "4.4.0.bcr.1",
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.26")
