@@ -1,9 +1,0 @@
-[Plugin]
-Module = command_lock
-Embedded = dnf_command_lock_register_types
-Name = lock
-Description = Generate JSON lockfile for packages and dependencies
-Authors = Antigravity
-License = GPL-2.0+
-Copyright = Copyright © 2026 Red Hat, Inc. and contributors
-X-Command-Syntax = lock [OPTION…] PACKAGE [PACKAGE…]

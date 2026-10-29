@@ -1,0 +1,22 @@
+{
+  "version":1,
+  "arch":"x86_64,noarch",
+  "requested":[
+    "mysql"
+  ],
+  "packages":[
+    {
+      "name":"mysql",
+      "version":"8.4.7-1.module+el9.7.0+90001+e2e00084",
+      "arch":"x86_64",
+      "nevra":"mysql-8.4.7-1.module+el9.7.0+90001+e2e00084.x86_64",
+      "url":"file:@EXECROOT@\/_main\/bazel-out\/@CONFIG@\/bin\/e2e\/testdata\/features-repo\/features\/mysql-8.4.7-1.module+el9.7.0+90001+e2e00084.x86_64.rpm",
+      "integrity":"sha256-nch5ULehHhDyTK3QJOAJhEKoQnwizOAKZB\/zUWDRBEo=",
+      "checksum":"9dc87950b7a11e10f24cadd024e0098442a8427c22cce00a641ff35160d1044a",
+      "requested":true,
+      "dependencies":[],
+      "dependencies_nevra":[],
+      "transitive_dependencies":[]
+    }
+  ]
+}

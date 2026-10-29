@@ -25,7 +25,6 @@ UPSTREAM_PLUGINS = [
 
 LOCAL_PLUGINS = [
     "rpm2archive",
-    "lock",
 ]
 
 [
@@ -63,22 +62,6 @@ COMMON_COPTS = [
     "-Werror=main",
 ]
 
-# C wrapper for libdnf C++-only API used by lock.c
-cc_library(
-    name = "lock_repo",
-    srcs = ["lock-repo.cpp"],
-    hdrs = ["lock-repo.h"],
-    copts = [
-        "-std=c++17",
-        "-DLIBDNF_UNSTABLE_API",
-    ],
-    includes = ["."],
-    deps = [
-        "@glib//:glib",
-        "@libdnf//:libdnf",
-    ],
-)
-
 genrule(
     name = "copy_upstream_core",
     srcs = [
@@ -101,8 +84,6 @@ cc_binary(
     srcs = [
         ":copy_upstream_core",
         "dnf-main.c",
-        "lock.c",
-        "lock.h",
         "rpm2archive.c",
         "rpm2archive.h",
     ] + [
@@ -134,15 +115,12 @@ cc_binary(
     includes = ["."],
     linkopts = ["-rdynamic"],
     deps = [
-        ":lock_repo",
         "@glib//:gio",
         "@glib//:glib",
         "@glib//:gobject",
-        "@json-c//:json-c",
         "@libarchive//libarchive:archive",
         "@libdnf//:libdnf",
         "@libpeas//:libpeas",
-        "@libsolv//:libsolv",
         "@rpm//:rpm",
         "@rpm//:rpmio",
         "@smartcols//:smartcols",
@@ -154,6 +132,7 @@ cc_binary(
         name = "microdnf_" + platform,
         binary = ":microdnf",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -164,6 +143,7 @@ filegroup(
         ":microdnf_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
+    tags = ["manual"],
 )
 
 cc_binary(
@@ -188,6 +168,7 @@ cc_binary(
         name = "rpm2archive_" + platform,
         binary = ":rpm2archive",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -198,103 +179,7 @@ filegroup(
         ":rpm2archive_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
-)
-
-cc_binary(
-    name = "dnf_lock",
-    srcs = [
-        ":copy_upstream_core",
-        "lock.c",
-        "lock.h",
-        "lock-main.c",
-    ],
-    copts = COMMON_COPTS,
-    defines = [
-        'PACKAGE_LIBDIR=\\"/usr/lib64/dnf\\"',
-        'PACKAGE_DATADIR=\\"/usr/share/dnf\\"',
-        'BUILDDIR=\\"dnf\\"',
-        'SRCDIR=\\"dnf\\"',
-    ],
-    includes = ["."],
-    deps = [
-        ":lock_repo",
-        "@glib//:gio",
-        "@glib//:glib",
-        "@glib//:gobject",
-        "@json-c//:json-c",
-        "@libdnf//:libdnf",
-        "@libsolv//:libsolv",
-        "@rpm//:rpm",
-        "@smartcols//:smartcols",
-    ],
-)
-
-[
-    platform_transition_binary(
-        name = "dnf_lock_" + platform,
-        binary = ":dnf_lock",
-        target_platform = "//bazel:" + platform,
-    )
-    for platform in SUPPORTED_PLATFORMS
-]
-
-filegroup(
-    name = "dnf_lock_all",
-    srcs = [
-        ":dnf_lock_" + platform
-        for platform in SUPPORTED_PLATFORMS
-    ],
-)
-
-cc_binary(
-    name = "mark",
-    srcs = [
-        ":copy_upstream_core",
-        "mark.c",
-        "mark.h",
-        "mark-main.c",
-    ],
-    copts = COMMON_COPTS,
-    defines = [
-        'PACKAGE_LIBDIR=\\"/usr/lib64/dnf\\"',
-        'PACKAGE_DATADIR=\\"/usr/share/dnf\\"',
-        'BUILDDIR=\\"dnf\\"',
-        'SRCDIR=\\"dnf\\"',
-    ],
-    includes = ["."],
-    deps = [
-        "@glib//:gio",
-        "@glib//:glib",
-        "@glib//:gobject",
-        "@json-c//:json-c",
-        "@libdnf//:libdnf",
-        "@libsolv//:libsolv",
-        "@rpm//:rpm",
-        "@rpm//:rpmio",
-        "@smartcols//:smartcols",
-    ],
-)
-
-[
-    platform_transition_binary(
-        name = "mark_" + platform,
-        binary = ":mark",
-        target_platform = "//bazel:" + platform,
-    )
-    for platform in SUPPORTED_PLATFORMS
-]
-
-filegroup(
-    name = "mark_all",
-    srcs = [
-        ":mark_" + platform
-        for platform in SUPPORTED_PLATFORMS
-    ],
-)
-
-alias(
-    name = "rpmdb-mark",
-    actual = ":mark",
+    tags = ["manual"],
 )
 
 [
@@ -302,6 +187,7 @@ alias(
         name = "rpm2files_" + platform,
         binary = "//rpm2files:rpm2files",
         target_platform = "//bazel:" + platform,
+        tags = ["manual"],
     )
     for platform in SUPPORTED_PLATFORMS
 ]
@@ -310,6 +196,35 @@ filegroup(
     name = "rpm2files_all",
     srcs = [
         ":rpm2files_" + platform
+        for platform in SUPPORTED_PLATFORMS
+    ],
+    tags = ["manual"],
+)
+
+# Upstream's dnf5 with the lock and rpmdb-mark commands linked in, see dnf5/main.cpp (DNF5_BUILTIN_PLUGINS). Not called dnf5: the
+# output file would be the directory of the sources in dnf5/.
+cc_binary(
+    name = "dnf5_binary",
+    deps = [
+        "@dnf5_src//:dnf5_main",
+        "//dnf/dnf5:lock_plugin",
+        "//dnf/dnf5:rpmdb_mark_plugin",
+    ],
+)
+
+[
+    platform_transition_binary(
+        name = "dnf5_" + platform,
+        binary = ":dnf5_binary",
+        target_platform = "//bazel:" + platform,
+    )
+    for platform in SUPPORTED_PLATFORMS
+]
+
+filegroup(
+    name = "dnf5_all",
+    srcs = [
+        ":dnf5_" + platform
         for platform in SUPPORTED_PLATFORMS
     ],
 )

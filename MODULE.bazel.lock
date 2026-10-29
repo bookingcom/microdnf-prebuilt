@@ -97,6 +97,8 @@
     "https://bcr.bazel.build/modules/cgrindel_bazel_starlib/0.28.0/source.json": "2b2900d443c8de9314ceadb7484d8f1c49af989da4b0d6231dfa859b82223dc1",
     "https://bcr.bazel.build/modules/curl/8.22.0/MODULE.bazel": "46742cafbc8e7f1660b61ec372716366cedde45d4e795f9c26871aecf22084bd",
     "https://bcr.bazel.build/modules/curl/8.22.0/source.json": "a94915f9626490efc89202be3a2ccfb36723ae00ae1de399de03955e0fd8ec79",
+    "https://bcr.bazel.build/modules/fmt/12.2.0.bcr.1/MODULE.bazel": "1f391c93affc305e3d32fa24024f132e465fcdeec3d39adfb01e7f3869b993a7",
+    "https://bcr.bazel.build/modules/fmt/12.2.0.bcr.1/source.json": "5a817473cfdd07162adbf555a3cd5c8a798f1f751b87a13a3464dc6d9370b0f3",
     "https://bcr.bazel.build/modules/gawk/5.3.2.bcr.1/MODULE.bazel": "cdf8cbe5ee750db04b78878c9633cc76e80dcf4416cbe982ac3a9222f80713c8",
     "https://bcr.bazel.build/modules/gawk/5.3.2.bcr.3/MODULE.bazel": "f1b7bb2dd53e8f2ef984b39485ec8a44e9076dda5c4b8efd2fb4c6a6e856a31d",
     "https://bcr.bazel.build/modules/gawk/5.3.2.bcr.7/MODULE.bazel": "1e5e03c383fa64ebbe0942a225c32168fd6ef6b270351bbec481d47d19d1b96d",
@@ -152,11 +154,12 @@
     "https://bcr.bazel.build/modules/nlohmann_json/3.6.1/source.json": "f448c6e8963fdfa7eb831457df83ad63d3d6355018f6574fb017e8169deb43a9",
     "https://bcr.bazel.build/modules/openssl/4.0.1.bcr.0/MODULE.bazel": "e8191f8fbe7c8d2c5bfcdfa3c8cd5d99ad30ae086eaaa1fabbe2427c2fe599ee",
     "https://bcr.bazel.build/modules/openssl/4.0.1.bcr.0/source.json": "e2689ff963fd358f0f7db300f41cc684e5fb596972f2508030338efea1e298e9",
+    "https://bcr.bazel.build/modules/package_metadata/0.0.13/MODULE.bazel": "a9cc7e81640c1e7eaca5a465cdf4b63c88d416ca998fcded3680181b1602eee2",
+    "https://bcr.bazel.build/modules/package_metadata/0.0.13/source.json": "f488e4534468eac223f6417dfdf8d3b7299166d36536408d37c2493ca1e8539d",
     "https://bcr.bazel.build/modules/package_metadata/0.0.2/MODULE.bazel": "fb8d25550742674d63d7b250063d4580ca530499f045d70748b1b142081ebb92",
     "https://bcr.bazel.build/modules/package_metadata/0.0.3/MODULE.bazel": "77890552ecea9e284b5424c9de827a58099348763a4359e975c359a83d4faa83",
     "https://bcr.bazel.build/modules/package_metadata/0.0.5/MODULE.bazel": "ef4f9439e3270fdd6b9fd4dbc3d2f29d13888e44c529a1b243f7a31dfbc2e8e4",
     "https://bcr.bazel.build/modules/package_metadata/0.0.7/MODULE.bazel": "7adb03933fc8401f495800cf4eafcff0edc6da0ff55c7db223ef69d19f689486",
-    "https://bcr.bazel.build/modules/package_metadata/0.0.7/source.json": "50639625e937b56115012674c797cca7a05a96b4878c87d803c13dc2b31de8a0",
     "https://bcr.bazel.build/modules/pcre2/10.49/MODULE.bazel": "eaabb5bcec5a747b564deae84195c3cb62d2306476acad27fafd4ae095640172",
     "https://bcr.bazel.build/modules/pcre2/10.49/source.json": "6210aa93685ab04170385f7e0f7d1f7aac75878bd360f8077b5afa8b152ffb68",
     "https://bcr.bazel.build/modules/platforms/0.0.10/MODULE.bazel": "8cb8efaf200bdeb2150d93e162c40f388529a25852b332cec879373771e48ed5",
@@ -389,44 +392,12 @@
     },
     "//microdnf:extensions.bzl%microdnf_prebuilt_extension": {
       "general": {
-        "bzlTransitiveDigest": "1m8KWLRZKH9eD4iJ3ovFnZR04vn4BuPIIALumCHoydY=",
+        "bzlTransitiveDigest": "JmvUXSBe5XNV38266ucG9cL7dG0WqrjpX5BE4sSulsc=",
         "usagesDigest": "nYgae9k7YGOJIWsCDVZVB+ansr24iSVSrz8bRTgt+LQ=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
         ],
         "generatedRepoSpecs": {
-          "dnf_lock_linux_amd64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_linux_amd64",
-              "integrity": "sha256-DS9IKJQGwBfvMWwxqOx9CaZkU8G03ISaansnbrlj45g=",
-              "executable": true
-            }
-          },
-          "dnf_lock_linux_arm64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_linux_arm64",
-              "integrity": "sha256-l8d9MgIKXR2uNMCN9Zn0+L9xeBUliNORxQE/C9Ulw9E=",
-              "executable": true
-            }
-          },
-          "dnf_lock_osx_amd64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_osx_amd64",
-              "integrity": "sha256-CeUC3dKvDi8OSP5nTVjqw+4rMEkPqVtLWdiLLJogE6o=",
-              "executable": true
-            }
-          },
-          "dnf_lock_osx_arm64": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
-            "attributes": {
-              "url": "https://github.com/bookingcom/microdnf-prebuilt/releases/download/microdnf-prebuilt-vc6a9aa9.bcr.1/dnf_lock_osx_arm64",
-              "integrity": "sha256-2ate0QSXhzwbouVV7SLLTezmEIB1xQYKeWw7Jb00hgQ=",
-              "executable": true
-            }
-          },
           "microdnf_linux_amd64": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
             "attributes": {
@@ -499,12 +470,12 @@
             "repoRuleId": "@@//microdnf/private:extensions.bzl%rpm2archive_host_alias_repo",
             "attributes": {}
           },
-          "dnf_lock": {
-            "repoRuleId": "@@//microdnf/private:extensions.bzl%dnf_lock_host_alias_repo",
-            "attributes": {}
-          },
           "rpm2files": {
             "repoRuleId": "@@//microdnf/private:extensions.bzl%rpm2files_host_alias_repo",
+            "attributes": {}
+          },
+          "dnf5": {
+            "repoRuleId": "@@//microdnf/private:extensions.bzl%dnf5_host_alias_repo",
             "attributes": {}
           }
         }
@@ -512,7 +483,7 @@
     },
     "//microdnf:extensions.bzl%rpm": {
       "general": {
-        "bzlTransitiveDigest": "1m8KWLRZKH9eD4iJ3ovFnZR04vn4BuPIIALumCHoydY=",
+        "bzlTransitiveDigest": "JmvUXSBe5XNV38266ucG9cL7dG0WqrjpX5BE4sSulsc=",
         "usagesDigest": "G4xDQwbT+beGt4/2nChyemszdh5PPOvpdhGUg3vPKsY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
