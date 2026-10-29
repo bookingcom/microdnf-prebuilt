@@ -1,0 +1,175 @@
+--- a/libdnf5/plugin/plugins.cpp
++++ b/libdnf5/plugin/plugins.cpp
+@@ -23,68 +23,97 @@
+ #include "iplugin_private.hpp"
+ #include "plugin_info_impl.hpp"
+ #include "utils/fs/utils.hpp"
+-#include "utils/library.hpp"
+ 
+ #include "libdnf5/utils/bgettext/bgettext-mark-domain.h"
+ 
+ #include <filesystem>
+ 
++// The libdnf5 plugins are linked into the library. BUILD.bazel renames the extern "C" entry points of each one to
++// <name>_libdnf_plugin_*, so they do not clash, and nothing is loaded from the host.
++extern "C" {
++#define LIBDNF5_BUILTIN_PLUGINS(X) X(actions) X(expired_pgp_keys) X(local)
++#define LIBDNF5_DECLARE_BUILTIN_PLUGIN(n)                                                  \
++    libdnf5::PluginAPIVersion n##_libdnf_plugin_get_api_version(void);                     \
++    const char * n##_libdnf_plugin_get_name(void);                                         \
++    libdnf5::plugin::Version n##_libdnf_plugin_get_version(void);                          \
++    libdnf5::plugin::IPlugin * n##_libdnf_plugin_new_instance(                             \
++        libdnf5::LibraryVersion, libdnf5::plugin::IPluginData &, libdnf5::ConfigParser &); \
++    void n##_libdnf_plugin_delete_instance(libdnf5::plugin::IPlugin *);                    \
++    std::exception_ptr * n##_libdnf_plugin_get_last_exception(void);
++LIBDNF5_BUILTIN_PLUGINS(LIBDNF5_DECLARE_BUILTIN_PLUGIN)
++}
++
+ namespace libdnf5::plugin {
+ 
+-// Support for Plugin in the shared library.
++namespace {
++
++struct BuiltinEntry {
++    decltype(&libdnf_plugin_get_api_version) get_api_version;
++    decltype(&libdnf_plugin_get_name) get_name;
++    decltype(&libdnf_plugin_get_version) get_version;
++    decltype(&libdnf_plugin_new_instance) new_instance;
++    decltype(&libdnf_plugin_delete_instance) delete_instance;
++    decltype(&libdnf_plugin_get_last_exception) get_last_exception;
++};
++
++#define LIBDNF5_BUILTIN_ENTRY(n)                                                          \
++    {n##_libdnf_plugin_get_api_version,                                                   \
++     n##_libdnf_plugin_get_name,                                                          \
++     n##_libdnf_plugin_get_version,                                                       \
++     n##_libdnf_plugin_new_instance,                                                      \
++     n##_libdnf_plugin_delete_instance,                                                   \
++     n##_libdnf_plugin_get_last_exception},
++const BuiltinEntry builtin_entries[] = {LIBDNF5_BUILTIN_PLUGINS(LIBDNF5_BUILTIN_ENTRY)};
++
++const BuiltinEntry * try_find_builtin(const std::string & plugin_name) {
++    for (const auto & entry : builtin_entries) {
++        if (plugin_name == entry.get_name()) {
++            return &entry;
++        }
++    }
++    return nullptr;
++}
++
++const BuiltinEntry & find_builtin(const std::string & plugin_name) {
++    if (const auto * entry = try_find_builtin(plugin_name)) {
++        return *entry;
++    }
++    throw PluginError(M_("Plugin \"{}\" is not built in"), plugin_name);
++}
++
++}  // namespace
++
++// Support for a plugin linked into the library.
+ class PluginLibrary : public Plugin {
+ public:
+-    // Loads a shared library, finds symbols, and instantiates the plugin.
+-    explicit PluginLibrary(Base & base, ConfigParser && parser, const std::string & library_path);
++    // Finds the built-in plugin by name and instantiates it.
++    explicit PluginLibrary(Base & base, ConfigParser && parser, const std::string & plugin_name);
+ 
+     ~PluginLibrary();
+ 
+ private:
+-    using TGetApiVersionFunc = decltype(&libdnf_plugin_get_api_version);
+-    using TGetNameFunc = decltype(&libdnf_plugin_get_name);
+-    using TGetVersionFunc = decltype(&libdnf_plugin_get_version);
+-    using TNewInstanceFunc = decltype(&libdnf_plugin_new_instance);
+-    using TDeleteInstanceFunc = decltype(&libdnf_plugin_delete_instance);
+-    using TGetLastException = decltype(&libdnf_plugin_get_last_exception);
+-    TGetApiVersionFunc get_api_version{nullptr};
+-    TGetNameFunc get_name{nullptr};
+-    TGetVersionFunc get_version{nullptr};
+-    TNewInstanceFunc new_instance{nullptr};
+-    TDeleteInstanceFunc delete_instance{nullptr};
+-    TGetLastException get_last_exception{nullptr};
+-    utils::Library library;
++    const BuiltinEntry & entry;
+ };
+ 
+-PluginLibrary::PluginLibrary(Base & base, ConfigParser && parser, const std::string & library_path)
++PluginLibrary::PluginLibrary(Base & base, ConfigParser && parser, const std::string & plugin_name)
+     : Plugin(std::move(parser)),
+-      library(library_path) {
+-    get_api_version = reinterpret_cast<TGetApiVersionFunc>(library.get_address("libdnf_plugin_get_api_version"));
+-    get_name = reinterpret_cast<TGetNameFunc>(library.get_address("libdnf_plugin_get_name"));
++      entry(find_builtin(plugin_name)) {
++    const auto & get_api_version = entry.get_api_version;
++    const auto & get_name = entry.get_name;
++    const auto & get_last_exception = entry.get_last_exception;
++    const auto & new_instance = entry.new_instance;
+ 
+     const auto & libdnf_plugin_api_version = libdnf5::get_plugin_api_version();
+     const auto & plugin_api_version = get_api_version();
+     if (plugin_api_version.major != libdnf_plugin_api_version.major) {
+         throw PluginError(
+-            M_("Unsupported plugin API combination. API version provided by plugin \"{}\" (\"{}\") is \"{}.{}\"."
++            M_("Unsupported plugin API combination. API version provided by plugin \"{}\" is \"{}.{}\"."
+                " API version in libdnf is \"{}.{}\"."),
+             std::string(get_name()),
+-            library_path,
+             plugin_api_version.major,
+             plugin_api_version.minor,
+             libdnf_plugin_api_version.major,
+             libdnf_plugin_api_version.minor);
+-    }
+-
+-    get_version = reinterpret_cast<TGetVersionFunc>(library.get_address("libdnf_plugin_get_version"));
+-    new_instance = reinterpret_cast<TNewInstanceFunc>(library.get_address("libdnf_plugin_new_instance"));
+-    delete_instance = reinterpret_cast<TDeleteInstanceFunc>(library.get_address("libdnf_plugin_delete_instance"));
+-
+-    try {
+-        get_last_exception =
+-            reinterpret_cast<TGetLastException>(library.get_address("libdnf_plugin_get_last_exception"));
+-    } catch (const utils::LibraryError &) {
+-        // The original plugin API did not have the "libdnf_plugin_get_last_exception" function.
+-        // To maintain compatibility with older plugins, the "libdnf_plugin_get_last_exception" function is optional.
+     }
+ 
+     iplugin_instance = new_instance(libdnf5::get_library_version(), get_iplugin_data(base), get_config_parser());
+@@ -113,7 +142,7 @@
+ 
+ PluginLibrary::~PluginLibrary() {
+     finish();
+-    delete_instance(iplugin_instance);
++    entry.delete_instance(iplugin_instance);
+     iplugin_instance = nullptr;
+ }
+ 
+@@ -138,13 +167,8 @@
+ }
+ 
+ std::string Plugins::find_plugin_library(const std::string & plugin_name) {
+-    auto library_name = plugin_name + ".so";
+-    std::filesystem::path library_path = base->get_config().get_pluginpath_option().get_value();
+-    library_path /= library_name;
+-    if (std::filesystem::exists(library_path)) {
+-        return library_path;
+-    }
+-    throw PluginError(M_("Cannot find plugin library \"{}\""), library_path.string());
++    find_builtin(plugin_name);
++    return plugin_name;
+ }
+ 
+ void Plugins::load_plugin_library(
+@@ -186,6 +210,14 @@
+         try {
+             auto [plugin_name, parser, is_enabled] = base->load_plugin_config(path);
+             if (is_enabled) {
++                if (!try_find_builtin(plugin_name)) {
++                    // Images ship configuration for plugins this build does not contain (rhsm, snapper, ...).
++                    logger.warning(
++                        "Skipping libdnf plugin \"{}\" configured in \"{}\": it is not built in",
++                        plugin_name,
++                        path.string());
++                    continue;
++                }
+                 auto library_path = find_plugin_library(plugin_name);
+                 load_plugin_library(std::move(parser), library_path, plugin_name);
+             }

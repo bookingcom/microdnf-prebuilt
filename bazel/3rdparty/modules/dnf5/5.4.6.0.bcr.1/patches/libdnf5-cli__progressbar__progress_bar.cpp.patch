@@ -1,0 +1,11 @@
+--- a/libdnf5-cli/progressbar/progress_bar.cpp
++++ b/libdnf5-cli/progressbar/progress_bar.cpp
+@@ -345,7 +345,7 @@
+             static_cast<int32_t>(static_cast<float>(p_impl->ticks) / static_cast<float>(p_impl->total_ticks) * 100);
+     }
+ 
+-    auto now = std::chrono::high_resolution_clock::now();
++    auto now = std::chrono::system_clock::now();
+ 
+     // compute the current speed (ticks per second)
+     auto delta = now - p_impl->current_speed_window_start;
