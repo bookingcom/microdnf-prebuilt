@@ -1,5 +1,8 @@
-# microdnf-prebuilt
 
+
+# *Deprecated: superseded by https://github.com/bookingcom/dnf5-prebuilt*
+
+## microdnf-prebuilt
 Bazel repository capable of building `microdnf`, `rpm2archive`, and `dnf_lock` hermetically across platforms.
 
 ## Architecture
@@ -58,3 +61,4 @@ bazel build //:microdnf_all //:rpm2archive_all //:dnf_lock_all
 This project is licensed under the [Apache License, Version 2.0](LICENSE).
 
 The Apache 2.0 license is a permissive open source license that allows free use, modification, reproduction, and distribution in both open source and private closed-source / commercial software projects.
+~~
