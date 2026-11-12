@@ -1,0 +1,82 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load(":defs.bzl", "domain")
+
+package(default_visibility = ["//visibility:public"])
+
+# dnf5 is one static binary. Upstream builds libdnf5, libdnf5-cli and every plugin as shared objects and dlopen()s
+# the plugins from the host; here the plugins are linked in and nothing is loaded from the host.
+
+_CXXOPTS = [
+    "-std=gnu++20",
+    # Stands in for patches to upstream files that assume glibc and libstdc++.
+    "-include",
+    "bazel_compat.h",
+]
+
+_VERSION = [
+    "PROJECT_VERSION_PRIME=5",
+    "PROJECT_VERSION_MAJOR=4",
+    "PROJECT_VERSION_MINOR=6",
+    "PROJECT_VERSION_MICRO=0",
+]
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["**/*.h", "**/*.hpp", "**/*.sql"]),
+    includes = [
+        "common",
+        "compat",
+        "dnf5/include",
+        "include",
+    ] + select({
+        "@platforms//os:macos": ["compat/darwin"],
+        "//conditions:default": [],
+    }),
+    # libsolv spells its "requires" field dep_requires, as that is a C++20 keyword.
+    defines = ["LIBSOLV_SOLVABLE_PREPEND_DEP"],
+    deps = ["@glib//:glib"],
+)
+
+cc_library(
+    name = "common_obj",
+    srcs = glob(["common/**/*.cpp"]),
+    cxxopts = _CXXOPTS,
+    deps = [
+        ":headers",
+        "@fmt",
+    ],
+)
+
+cc_library(
+    name = "libdnf5",
+    srcs = glob([
+        "libdnf5/**/*.c",
+        "libdnf5/**/*.cpp",
+    ]),
+    copts = domain("libdnf5"),
+    cxxopts = _CXXOPTS,
+    local_defines = _VERSION + [
+        "LIBSOLV_FLAG_FOCUSNEW=1",
+        "WITH_MODULEMD",
+    ],
+    # Private headers are included relative to libdnf5/.
+    includes = ["libdnf5"],
+    deps = [
+        ":common_obj",
+        ":headers",
+        "@fmt",
+        "@glib//:gio",
+        "@glib//:glib",
+        "@glib//:gobject",
+        "@json-c",
+        "@libmodulemd//:modulemd",
+        "@librepo//:librepo",
+        "@libsolv//:libsolv",
+        "@libsolv//:libsolvext",
+        "@libxml2",
+        "@rpm",
+        "@rpm//:rpmio",
+        "@sqlite3",
+        "@toml11",
+    ],
+)
