@@ -1,0 +1,11 @@
+{
+    "homepage": "https://github.com/ToruNiina/toml11",
+    "maintainers": [],
+    "repository": [
+        "github:ToruNiina/toml11"
+    ],
+    "versions": [
+        "4.4.0.bcr.1"
+    ],
+    "yanked_versions": {}
+}
