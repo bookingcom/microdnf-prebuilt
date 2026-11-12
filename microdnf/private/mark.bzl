@@ -54,6 +54,10 @@ mkdir -p "%s"
     )
 
     args = ctx.actions.args()
+    if ctx.attr.forcearch:
+        args.add("--forcearch=" + ctx.attr.forcearch)
+    for pattern in ctx.attr.excludepkgs:
+        args.add("--excludepkgs=" + pattern)
     if ctx.attr.nodeps:
         args.add("--nodeps")
     for pkg in ctx.attr.packages:
@@ -96,6 +100,13 @@ rpm_mark = rule(
         "arch": attr.string(
             default = "x86_64,noarch",
             doc = "Comma-separated target architectures.",
+        ),
+        "forcearch": attr.string(
+            doc = "Architecture to solve for instead of the host's (default: first non-noarch entry of arch).",
+        ),
+        "excludepkgs": attr.string_list(
+            default = [],
+            doc = "NEVRA globs hidden from the solver, like dnf excludepkgs=.",
         ),
         "nodeps": attr.bool(
             default = False,

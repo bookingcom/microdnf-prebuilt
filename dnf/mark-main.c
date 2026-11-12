@@ -15,7 +15,62 @@
 
 static GSList *enable_disable_repos = NULL;
 static gboolean opt_refresh = FALSE;
+static gboolean opt_best = FALSE;
+static gboolean opt_nobest = FALSE;
 static gchar *opt_installroot_global = NULL;
+
+/* Maps a solve architecture to dnf's $basearch (i686 -> i386, armv7hl -> armhfp, ...). */
+static const gchar *
+basearch_for_arch (const gchar *arch)
+{
+  if (arch[0] == 'i' && arch[1] != '\0' && g_str_has_suffix (arch, "86") && strlen (arch) == 4)
+    return "i386";
+  if (g_str_has_prefix (arch, "armv") && g_str_has_suffix (arch, "hl"))
+    return "armhfp";
+  return arch;
+}
+
+/* The architecture to solve for: --forcearch, else the first non-noarch/src
+ * --archlist / --arch entry. Read from a copy of argv, ahead of dnf_context_setup,
+ * so that $basearch in repo URLs follows it too. */
+static gchar *
+find_solve_arch (int argc, char **argv)
+{
+  g_autofree gchar *opt_archlist = NULL;
+  g_autofree gchar *opt_forcearch = NULL;
+  const GOptionEntry entries[] = {
+    { "archlist", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, NULL, NULL },
+    { "arch", '\0', 0, G_OPTION_ARG_STRING, &opt_archlist, NULL, NULL },
+    { "forcearch", '\0', 0, G_OPTION_ARG_STRING, &opt_forcearch, NULL, NULL },
+    { NULL }
+  };
+
+  g_autofree gchar **argv_copy = g_new0 (gchar *, argc + 1);
+  for (int i = 0; i < argc; i++)
+    argv_copy[i] = argv[i];
+  int argc_copy = argc;
+  gchar **argv_ptr = argv_copy;
+
+  g_autoptr(GOptionContext) arch_ctx = g_option_context_new (NULL);
+  g_option_context_add_main_entries (arch_ctx, entries, NULL);
+  g_option_context_set_ignore_unknown_options (arch_ctx, TRUE);
+  g_option_context_set_help_enabled (arch_ctx, FALSE);
+  if (!g_option_context_parse (arch_ctx, &argc_copy, &argv_ptr, NULL))
+    return NULL; /* run_mark reports the malformed option */
+
+  if (opt_forcearch && *opt_forcearch)
+    return g_steal_pointer (&opt_forcearch);
+  if (opt_archlist)
+    {
+      g_auto(GStrv) archs = g_strsplit_set (opt_archlist, ", ", -1);
+      for (char **a = archs; *a; ++a)
+        {
+          if (**a && g_strcmp0 (*a, "noarch") != 0 && g_strcmp0 (*a, "src") != 0)
+            return g_strdup (*a);
+        }
+    }
+  return NULL;
+}
 
 static gboolean
 process_global_option (const gchar  *option_name,
@@ -53,35 +108,46 @@ process_global_option (const gchar  *option_name,
       g_auto(GStrv) reposdir = g_strsplit (value, ",", -1);
       dnf_context_set_repos_dir (ctx, (const gchar * const *)reposdir);
     }
+  else if (g_strcmp0 (option_name, "--excludepkgs") == 0)
+    {
+      return dnf_conf_add_setopt ("excludepkgs", DNF_CONF_COMMANDLINE, value, error);
+    }
   else if (g_strcmp0 (option_name, "--setopt") == 0)
     {
       g_auto(GStrv) setopt = g_strsplit (value, "=", 2);
-      if (setopt[0] && setopt[1])
+      if (!setopt[0] || !setopt[1])
         {
-          if (strcmp (setopt[0], "cachedir") == 0)
-            {
-              const char *cachedir = setopt[1];
-              g_autofree gchar *metadatadir = g_build_path ("/", cachedir, "metadata", NULL);
-              dnf_context_set_cache_dir (ctx, metadatadir);
-              g_autofree gchar *solvdir = g_build_path ("/", cachedir, "solv", NULL);
-              dnf_context_set_solv_dir (ctx, solvdir);
-              g_autofree gchar *lockdir = g_build_path ("/", cachedir, "lock", NULL);
-              dnf_context_set_lock_dir (ctx, lockdir);
-            }
-          else if (strcmp (setopt[0], "reposdir") == 0)
-            {
-              g_auto(GStrv) reposdir = g_strsplit (setopt[1], ",", -1);
-              dnf_context_set_repos_dir (ctx, (const gchar * const *)reposdir);
-            }
-          else if (strcmp (setopt[0], "varsdir") == 0)
-            {
-              g_auto(GStrv) varsdir = g_strsplit (setopt[1], ",", -1);
-              dnf_context_set_vars_dir (ctx, (const gchar * const *)varsdir);
-            }
-          else if (strchr (setopt[0], '.'))
-            {
-              dnf_conf_add_setopt (setopt[0], DNF_CONF_COMMANDLINE, setopt[1], NULL);
-            }
+          g_set_error (error, G_OPTION_ERROR, G_OPTION_ERROR_BAD_VALUE,
+                       "Missing value in: %s", value);
+          return FALSE;
+        }
+      if (strcmp (setopt[0], "cachedir") == 0)
+        {
+          const char *cachedir = setopt[1];
+          g_autofree gchar *metadatadir = g_build_path ("/", cachedir, "metadata", NULL);
+          dnf_context_set_cache_dir (ctx, metadatadir);
+          g_autofree gchar *solvdir = g_build_path ("/", cachedir, "solv", NULL);
+          dnf_context_set_solv_dir (ctx, solvdir);
+          g_autofree gchar *lockdir = g_build_path ("/", cachedir, "lock", NULL);
+          dnf_context_set_lock_dir (ctx, lockdir);
+        }
+      else if (strcmp (setopt[0], "reposdir") == 0)
+        {
+          g_auto(GStrv) reposdir = g_strsplit (setopt[1], ",", -1);
+          dnf_context_set_repos_dir (ctx, (const gchar * const *)reposdir);
+        }
+      else if (strcmp (setopt[0], "varsdir") == 0)
+        {
+          g_auto(GStrv) varsdir = g_strsplit (setopt[1], ",", -1);
+          dnf_context_set_vars_dir (ctx, (const gchar * const *)varsdir);
+        }
+      else if (strcmp (setopt[0], "module_platform_id") == 0)
+        {
+          dnf_context_set_platform_module (ctx, setopt[1]);
+        }
+      else
+        {
+          return dnf_conf_add_setopt (setopt[0], DNF_CONF_COMMANDLINE, setopt[1], error);
         }
     }
   return TRUE;
@@ -139,10 +205,13 @@ main (int argc, char *argv[])
   dnf_context_set_cache_age (ctx, G_MAXUINT - 1);
 
   const GOptionEntry global_opts[] = {
+    { "best", '\0', 0, G_OPTION_ARG_NONE, &opt_best, "Try the best available package versions in transactions", NULL },
+    { "nobest", '\0', 0, G_OPTION_ARG_NONE, &opt_nobest, "Do not limit the transaction to the best candidates", NULL },
     { "config", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Configuration file location", "<config file>" },
     { "repo-config", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Repository configuration file location", "<config file>" },
     { "disablerepo", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Disable repository by ID", "ID" },
     { "enablerepo", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Enable repository by ID", "ID" },
+    { "excludepkgs", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Hide packages matching NEVRA globs from the solver", "GLOB,..." },
     { "installroot", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Set install root", "PATH" },
     { "refresh", '\0', 0, G_OPTION_ARG_NONE, &opt_refresh, "Set metadata as expired", NULL },
     { "releasever", '\0', 0, G_OPTION_ARG_CALLBACK, process_global_option, "Override $releasever", "RELEASEVER" },
@@ -166,16 +235,20 @@ main (int argc, char *argv[])
           g_option_group_add_entries (help_global_group, global_opts);
           g_option_context_add_group (help_ctx, g_steal_pointer (&help_global_group));
           const GOptionEntry entries[] = {
-            { "installroot", '\0', 0, G_OPTION_ARG_FILENAME, NULL, "Root directory for rpmdb installation", "PATH" },
-            { "dbpath", '\0', 0, G_OPTION_ARG_FILENAME, NULL, "Path to rpm database (default: /var/lib/rpm)", "PATH" },
-            { "archlist", '\0', 0, G_OPTION_ARG_STRING, NULL, "Limit query to packages of given architectures", "ARCH,..." },
-            { "arch", '\0', 0, G_OPTION_ARG_STRING, NULL, "Limit query to packages of given architectures", "ARCH,..." },
+            { "installroot", '\0', 0, G_OPTION_ARG_NONE, NULL, "Root directory for rpmdb installation", "PATH" },
+            { "dbpath", '\0', 0, G_OPTION_ARG_NONE, NULL, "Path to rpm database (default: /var/lib/rpm)", "PATH" },
+            { "archlist", '\0', 0, G_OPTION_ARG_NONE, NULL, "Limit query to packages of given architectures", "ARCH,..." },
+            { "arch", '\0', 0, G_OPTION_ARG_NONE, NULL, "Limit query to packages of given architectures", "ARCH,..." },
+            { "forcearch", '\0', 0, G_OPTION_ARG_NONE, NULL, "Solve for this architecture instead of the host's (default: first non-noarch --archlist entry)", "ARCH" },
             { "nodeps", '\0', 0, G_OPTION_ARG_NONE, NULL, "Do not resolve dependencies", NULL },
-            { "package", 'p', 0, G_OPTION_ARG_STRING_ARRAY, NULL, "Package specification to mark as installed", "PKG[=VER]" },
+            { "package", 'p', 0, G_OPTION_ARG_NONE, NULL, "Package specification to mark as installed", "PKG[=VER]" },
             { NULL }
           };
           g_option_context_add_main_entries (help_ctx, entries, NULL);
-          g_option_context_parse (help_ctx, &argc, &argv, NULL);
+          char *help_argv[] = { argv[0], argv[in], NULL };
+          int help_argc = 2;
+          char **help_argv_ptr = help_argv;
+          g_option_context_parse (help_ctx, &help_argc, &help_argv_ptr, NULL);
           return 0;
         }
     }
@@ -194,6 +267,12 @@ main (int argc, char *argv[])
       return 1;
     }
 
+  if (opt_best && opt_nobest)
+    {
+      g_printerr ("Error: Argument --nobest is not allowed with argument --best\n");
+      return 1;
+    }
+
   if (!opt_installroot_global || g_strcmp0 (opt_installroot_global, "/") == 0)
     {
       g_printerr ("Error: --installroot must be specified and cannot be '/'\n");
@@ -203,11 +282,26 @@ main (int argc, char *argv[])
   if (opt_refresh)
     dnf_context_set_cache_age (ctx, 0);
 
+  /* Solve for the target architecture, not the host's: otherwise libsolv
+   * rejects e.g. x86_64 packages on an arm64 host, and $basearch in repo URLs
+   * would keep the host value. */
+  g_autofree gchar *solve_arch = find_solve_arch (argc, argv);
+  if (solve_arch)
+    {
+      dnf_context_set_arch (ctx, solve_arch);
+      setenv ("DNF_VAR_basearch", basearch_for_arch (solve_arch), 1);
+    }
+
   if (!dnf_context_setup (ctx, NULL, &error))
     {
       g_printerr ("Error setting up context: %s\n", error->message);
       return 1;
     }
+
+  if (opt_best)
+    dnf_context_set_best (TRUE);
+  else if (opt_nobest)
+    dnf_context_set_best (FALSE);
 
   for (GSList *item = enable_disable_repos; item; item = item->next)
     {
@@ -223,7 +317,11 @@ main (int argc, char *argv[])
   g_option_group_add_entries (subcmd_global_group, global_opts);
   g_option_context_add_group (subcmd_opt_ctx, g_steal_pointer (&subcmd_global_group));
 
-  if (!run_mark (argc, argv, subcmd_opt_ctx, ctx, &error))
+  gboolean ok = run_mark (argc, argv, subcmd_opt_ctx, ctx, &error);
+  g_slist_free_full (enable_disable_repos, g_free);
+  g_free (opt_installroot_global);
+
+  if (!ok)
     {
       if (error)
         g_printerr ("mark error: %s\n", error->message);

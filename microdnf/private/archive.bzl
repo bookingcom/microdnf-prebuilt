@@ -14,7 +14,7 @@ def _rpm_archive_impl(ctx):
         out = ctx.actions.declare_file(ctx.label.name + ext)
 
     # Validate and propagate architecture
-    resolved_arch = "noarch"
+    resolved_arch = ctx.attr.forcearch if ctx.attr.forcearch else "noarch"
     for r in ctx.attr.rpms:
         p_arch = r[RpmInfo].arch
         if p_arch and p_arch != "noarch":
@@ -45,6 +45,8 @@ def _rpm_archive_impl(ctx):
     args.add("--output", out)
     if compression:
         args.add("--compression", compression)
+    if ctx.attr.forcearch:
+        args.add("--forcearch", ctx.attr.forcearch)
     for obs in obs_files:
         args.add("--obsolete-rpm", obs)
     for wh in whiteouts:
@@ -92,6 +94,9 @@ rpm_archive = rule(
             default = "gzip",
             values = ["gzip", "zstd", "none", "auto"],
             doc = "Archive compression format.",
+        ),
+        "forcearch": attr.string(
+            doc = "Optional target architecture override to validate RPM headers against.",
         ),
         "out": attr.output(
             doc = "Optional output archive file. Defaults to {name}.tar.gz (or .tar.zst / .tar).",

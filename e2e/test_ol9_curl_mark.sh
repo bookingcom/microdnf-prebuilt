@@ -18,8 +18,8 @@ if [ ! -x "${CURL_BIN}" ]; then
   exit 1
 fi
 
-# Verify ELF header
-if ! file "${CURL_BIN}" | grep -q "ELF 64-bit"; then
+# Verify ELF header (use -L to dereference Bazel sandbox symlinks)
+if ! file -L "${CURL_BIN}" | grep -q "ELF 64-bit"; then
   echo "Error: ${CURL_BIN} is not an ELF 64-bit binary"
   exit 1
 fi
@@ -76,12 +76,23 @@ TMP_REPOS_DIR="${TEST_TMPDIR}/repos.d"
 mkdir -p "${TMP_REPOS_DIR}"
 sed "s|@REPO_DIR@|${PWD}/${OL9_REPO_DIR}|g" "${OL9_REPO}" > "${TMP_REPOS_DIR}/ol9.repo"
 
-# Step C: Run mark tool to mark curl as installed into rpmdb
+# Step C: Run mark tool to mark curl as installed into rpmdb (using --forcearch and $basearch repo URL)
+BASEARCH_REPO_ROOT="${TEST_TMPDIR}/basearch_repo"
+mkdir -p "${BASEARCH_REPO_ROOT}"
+ln -sfn "${PWD}/${OL9_REPO_DIR}" "${BASEARCH_REPO_ROOT}/x86_64"
+cat > "${TMP_REPOS_DIR}/ol9.repo" <<REPO
+[ol9]
+name=Oracle Linux 9 (\$basearch)
+baseurl=file://${BASEARCH_REPO_ROOT}/\$basearch
+enabled=1
+gpgcheck=0
+REPO
+
 "${MARK_BIN}" \
   --reposdir="${TMP_REPOS_DIR}" \
   --installroot="${STAGING_ROOT}" \
   --releasever="9" \
-  --archlist="x86_64" \
+  --forcearch="x86_64" \
   "curl=7.76.1-40.el9_8.8"
 
 # Step D: Verify rpmdb inside multistage image

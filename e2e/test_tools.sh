@@ -21,5 +21,6 @@ echo "Testing rpm2files execution..."
 
 echo "Testing mark execution..."
 "${MARK}" --help
+"${MARK}" --forcearch=x86_64 --help
 
 echo "All tools executed successfully!"
