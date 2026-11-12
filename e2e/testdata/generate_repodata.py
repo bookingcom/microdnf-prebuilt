@@ -161,23 +161,163 @@ UPDATEINFO_XML = b"""<?xml version="1.0" ?>
 </updates>
 """
 
+# Synthetic metadata-only repository for the dnf_lock feature tests
+# (forcearch, excludepkgs, modules, best/nobest, weak dependencies).
+# Each tuple: (name, epoch, version, release, arch, [required package names]).
+FEATURE_PACKAGES = [
+    # --forcearch: a noarch package served from a $basearch URL.
+    ("libfoo", 0, "2.0", "1", "noarch", []),
+    # --excludepkgs: release cut-off globs and full NEVRAs.
+    ("ca-certificates", 0, "2025.2.80_v9.0.305", "1.el9", "noarch", []),
+    ("ca-certificates", 0, "2026.2.92_v9.0.319", "1.el9", "noarch", []),
+    ("certuser", 0, "1.0", "1", "noarch", ["ca-certificates"]),
+    ("expat", 0, "2.7.2", "1.el10", "x86_64", []),
+    ("expat", 0, "2.7.3", "1.el10_2.7", "x86_64", []),
+    # best / nobest: the newest bestapp is not installable.
+    ("bestapp", 0, "1.0", "1", "noarch", []),
+    ("bestapp", 0, "2.0", "1", "noarch", ["missing-lib"]),
+    # --module-enable: non-modular mysql 8.0 and the modular mysql:8.4 stream.
+    ("mysql", 0, "8.0.44", "1.el9", "x86_64", []),
+    ("mysql", 0, "8.4.7", "1.module+el9.7.0+90001+e2e00084", "x86_64", []),
+    # weak dependencies: weakapp Recommends weakdep, which nothing requires.
+    ("weakapp", 0, "1.0", "1", "noarch", []),
+    ("weakdep", 0, "1.0", "1", "noarch", []),
+    # Supplements: suppapp is pulled in only because suppbase is installed.
+    ("suppbase", 0, "1.0", "1", "noarch", []),
+    ("suppapp", 0, "1.0", "1", "noarch", []),
+    # Rich (boolean) weak dependencies, written as rpm:entry names like rpm does.
+    ("richapp", 0, "1.0", "1", "noarch", []),
+    ("richdep", 0, "1.0", "1", "noarch", []),
+    ("richtrigger", 0, "1.0", "1", "noarch", []),
+    ("richbase", 0, "1.0", "1", "noarch", []),
+    ("richsupp", 0, "1.0", "1", "noarch", []),
+]
+
+# Weak dependencies of FEATURE_PACKAGES by package name and rpm:<tag>.
+FEATURE_WEAK = {
+    "weakapp": {"recommends": ["weakdep"]},
+    "suppapp": {"supplements": ["suppbase"]},
+    "richapp": {"recommends": ["(richdep if richtrigger)"]},
+    "richsupp": {"supplements": ["(richbase and richtrigger)"]},
+}
+
+FEATURE_MODULES_YAML = b"""---
+document: modulemd
+version: 2
+data:
+  name: mysql
+  stream: "8.4"
+  version: 9070020251010000000
+  context: e2e00084
+  arch: x86_64
+  summary: MySQL Module
+  description: MySQL 8.4 stream for the dnf_lock e2e tests.
+  license:
+    module:
+    - MIT
+  dependencies:
+  - buildrequires:
+      platform: [el9]
+    requires:
+      platform: [el9]
+  profiles:
+    server:
+      rpms:
+      - mysql
+  artifacts:
+    rpms:
+    - mysql-0:8.4.7-1.module+el9.7.0+90001+e2e00084.x86_64
+...
+"""
+
+
+def _xml_doc(root, attrs, body):
+    head = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    return (head + f"<{root} {attrs}>\n" + "\n".join(body) + f"\n</{root}>\n").encode()
+
+
+def feature_repodata():
+    """Returns (primary, filelists, other) XML for FEATURE_PACKAGES."""
+    primary = []
+    stubs = []  # filelists.xml and other.xml carry the same per-package stub
+    for name, epoch, ver, rel, arch, requires in FEATURE_PACKAGES:
+        pkgid = hashlib.sha256(f"{name}-{epoch}:{ver}-{rel}.{arch}".encode()).hexdigest()
+        version = f'  <version epoch="{epoch}" ver="{ver}" rel="{rel}"/>'
+        primary += [
+            '<package type="rpm">',
+            f"  <name>{name}</name>",
+            f"  <arch>{arch}</arch>",
+            version,
+            f'  <checksum type="sha256" pkgid="YES">{pkgid}</checksum>',
+            f"  <summary>{name} test package</summary>",
+            f"  <description>{name} test package.</description>",
+            "  <packager></packager>",
+            "  <url></url>",
+            '  <time file="1404109239" build="1404109194"/>',
+            '  <size package="1000" installed="0" archive="0"/>',
+            f'  <location href="features/{name}-{ver}-{rel}.{arch}.rpm"/>',
+            "  <format>",
+            "    <rpm:license>MIT</rpm:license>",
+            "    <rpm:vendor/>",
+            "    <rpm:group>Unspecified</rpm:group>",
+            "    <rpm:buildhost>localhost</rpm:buildhost>",
+            f"    <rpm:sourcerpm>{name}-{ver}-{rel}.src.rpm</rpm:sourcerpm>",
+            '    <rpm:header-range start="0" end="0"/>',
+            "    <rpm:provides>",
+            f'      <rpm:entry name="{name}" flags="EQ" epoch="{epoch}" ver="{ver}" rel="{rel}"/>',
+            "    </rpm:provides>",
+        ]
+        if requires:
+            primary.append("    <rpm:requires>")
+            primary += [f'      <rpm:entry name="{dep}"/>' for dep in requires]
+            primary.append("    </rpm:requires>")
+        for tag, deps in FEATURE_WEAK.get(name, {}).items():
+            primary.append(f"    <rpm:{tag}>")
+            primary += [f'      <rpm:entry name="{dep}"/>' for dep in deps]
+            primary.append(f"    </rpm:{tag}>")
+        primary += ["  </format>", "</package>"]
+        stubs += [f'<package pkgid="{pkgid}" name="{name}" arch="{arch}">', version, "</package>"]
+
+    count = f'packages="{len(FEATURE_PACKAGES)}"'
+    return (
+        _xml_doc(
+            "metadata",
+            f'xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" {count}',
+            primary,
+        ),
+        _xml_doc("filelists", f'xmlns="http://linux.duke.edu/metadata/filelists" {count}', stubs),
+        _xml_doc("otherdata", f'xmlns="http://linux.duke.edu/metadata/other" {count}', stubs),
+    )
+
+
 def compress(data):
     return gzip.compress(data, mtime=0)
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--scenario", choices=["default", "features"], default="default")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    files = {
-        "primary.xml.gz": ("primary", PRIMARY_XML),
-        "filelists.xml.gz": ("filelists", FILELISTS_XML),
-        "other.xml.gz": ("other", OTHER_XML),
-        "prestodelta.xml.gz": ("prestodelta", PRESTODELTA_XML),
-        "updateinfo.xml.gz": ("updateinfo", UPDATEINFO_XML),
-    }
+    if args.scenario == "features":
+        primary_xml, filelists_xml, other_xml = feature_repodata()
+        files = {
+            "primary.xml.gz": ("primary", primary_xml),
+            "filelists.xml.gz": ("filelists", filelists_xml),
+            "other.xml.gz": ("other", other_xml),
+            "modules.yaml.gz": ("modules", FEATURE_MODULES_YAML),
+        }
+    else:
+        files = {
+            "primary.xml.gz": ("primary", PRIMARY_XML),
+            "filelists.xml.gz": ("filelists", FILELISTS_XML),
+            "other.xml.gz": ("other", OTHER_XML),
+            "prestodelta.xml.gz": ("prestodelta", PRESTODELTA_XML),
+            "updateinfo.xml.gz": ("updateinfo", UPDATEINFO_XML),
+        }
 
     meta_entries = []
     for fname, (dtype, raw) in files.items():
@@ -209,6 +349,7 @@ def main():
 """
     with open(os.path.join(args.out_dir, "repomd.xml"), "w", encoding="utf-8") as f:
         f.write(repomd)
+
 
 if __name__ == "__main__":
     main()
