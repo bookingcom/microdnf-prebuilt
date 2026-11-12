@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+# True under `--config=asan`; gates the suppression data files into the e2e tests.
+config_setting(
+    name = "enabled",
+    flag_values = {"@llvm//config:asan": "true"},
+)
+
+filegroup(
+    name = "suppressions",
+    srcs = [
+        "lsan.supp",
+        "ubsan.supp",
+    ],
+)

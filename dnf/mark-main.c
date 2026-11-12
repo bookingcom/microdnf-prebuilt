@@ -4,6 +4,7 @@
  */
 
 #include "mark.h"
+#include "solve-arch.h"
 #include <stdio.h>
 #include <locale.h>
 #include <unistd.h>
@@ -202,6 +203,15 @@ main (int argc, char *argv[])
 
   if (opt_refresh)
     dnf_context_set_cache_age (ctx, 0);
+
+  /* Solve for the --archlist architecture, not the host's: otherwise libsolv rejects
+   * e.g. x86_64 packages on an arm64 host and their dependencies go unmarked. */
+  g_autofree gchar *solve_arch = find_solve_arch (argc, argv);
+  if (solve_arch)
+    {
+      dnf_context_set_arch (ctx, solve_arch);
+      setenv ("DNF_VAR_basearch", basearch_for_arch (solve_arch), 1);
+    }
 
   if (!dnf_context_setup (ctx, NULL, &error))
     {

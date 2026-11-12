@@ -1,0 +1,37 @@
+--- a/libdnf5-cli/session.cpp
++++ b/libdnf5-cli/session.cpp
+@@ -22,6 +22,8 @@
+ #include <libdnf5/utils/bgettext/bgettext-mark-domain.h>
+ 
+ #include <chrono>
++#include <ctime>
++#include <iomanip>
+ #include <limits>
+ #include <sstream>
+ #include <utility>
+@@ -253,9 +255,14 @@
+         parser.add_init_value(std::unique_ptr<libdnf5::OptionNumber<std::int64_t>>(
+             new libdnf5::OptionNumber<int64_t>(0, [](const std::string & value) {
+                 std::istringstream ss(value);
+-                std::chrono::sys_seconds tp;
+-                ss >> std::chrono::parse("%F", tp);
+-                if (ss.fail()) {
++                std::tm tm{};
++                ss >> std::get_time(&tm, "%Y-%m-%d");
++                // get_time does not check the day of the month and timegm() normalizes it, so compare the
++                // result with the input to reject dates such as 2024-02-31.
++                const std::tm parsed = tm;
++                const time_t seconds = ss.fail() ? -1 : timegm(&tm);
++                if (ss.fail() || tm.tm_year != parsed.tm_year || tm.tm_mon != parsed.tm_mon ||
++                    tm.tm_mday != parsed.tm_mday) {
+                     throw libdnf5::cli::ArgumentParserError(
+                         M_("Invalid date passed: \"{}\". Dates in \"YYYY-MM-DD\" format are expected"), value);
+                 }
+@@ -263,6 +270,7 @@
+                 // elsewhere, e.g. in PackageQuery::filter_recent().
+                 // Therefore reject out-of-range values right now instead of
+                 // dealing with the overflows throughout the code.
++                const std::chrono::sys_seconds tp{std::chrono::seconds{seconds}};
+                 auto numeric_value = tp.time_since_epoch().count();
+                 if (std::cmp_less(numeric_value, std::numeric_limits<time_t>::lowest()) ||
+                     std::cmp_greater(numeric_value, std::numeric_limits<time_t>::max())) {
